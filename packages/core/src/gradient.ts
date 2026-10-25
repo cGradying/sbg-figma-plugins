@@ -72,10 +72,10 @@ export function figmaGradientTransform(r: Rect, angle: number): [[number, number
 
 export function applyGradient(doc: Doc, sel: Selection, g: Gradient): Doc {
   const paint = { kind: 'gradient', id: g.id } as const;
+  const inBox = new Set(doc.boxes.flatMap((b) => [...b.keys]));
   const cells = new Map(doc.cells);
-  const inBox = (k: number) => { const { x, y } = cellXY(doc, k); return doc.boxes.some((b) => x >= b.x && y >= b.y && x < b.x + b.w && y < b.y + b.h); };
-  for (const k of sel) if (!inBox(k)) cells.set(k, paint);
-  const inside = new Set(boxesInside(doc, sel).map((b) => b.id));
-  const boxes = doc.boxes.map((b) => (inside.has(b.id) ? { ...b, fill: paint } : b));
+  for (const k of sel) if (!inBox.has(k)) cells.set(k, paint);
+  const whole = new Set(boxesInside(doc, sel).map((b) => b.id));
+  const boxes = doc.boxes.map((b) => (whole.has(b.id) ? { ...b, fill: paint } : b));
   return { ...doc, cells, boxes, gradients: { ...doc.gradients, [g.id]: g } };
 }

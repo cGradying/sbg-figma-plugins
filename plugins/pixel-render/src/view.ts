@@ -1,7 +1,7 @@
-import { gradientEnds } from '@sbg/core';
+import { edgeLine, gradientEnds } from '@sbg/core';
 import type { Doc, Fill, Scene } from '@sbg/core';
 
-export type Overlay = { selection: ReadonlySet<number>; hover?: number; preview?: ReadonlySet<number>; shift?: { dx: number; dy: number } };
+export type Overlay = { selection: ReadonlySet<number>; hover?: number; edge?: number; preview?: ReadonlySet<number>; shift?: { dx: number; dy: number } };
 
 function fillStyle(ctx: CanvasRenderingContext2D, f: Fill): string | CanvasGradient {
   if (f.type === 'solid') return f.hex;
@@ -50,12 +50,16 @@ export function draw(canvas: HTMLCanvasElement, scene: Scene, doc: Doc, ov: Over
     ctx.lineWidth = 2;
     ctx.stroke(new Path2D(scene.grid.d));
     ctx.globalAlpha = 1;
-  } else if (!scene.background) {
-    ctx.strokeStyle = 'rgba(255,255,255,.08)';
+  }
+  if (!scene.grid) {
+    ctx.strokeStyle = 'rgba(255,255,255,.07)';
     ctx.lineWidth = 1 / scale;
+    ctx.setLineDash([4 / scale, 4 / scale]);
     for (let x = doc.cell; x < scene.canvas.w; x += doc.cell) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, scene.canvas.h); ctx.stroke(); }
     for (let y = doc.cell; y < scene.canvas.h; y += doc.cell) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(scene.canvas.w, y); ctx.stroke(); }
+    ctx.setLineDash([]);
   }
+  const invisible: { x: number; y: number; w: number; h: number }[] = [];
   for (const it of scene.items) {
     if (it.kind === 'rect') {
       if (it.fill) {
@@ -63,11 +67,15 @@ export function draw(canvas: HTMLCanvasElement, scene: Scene, doc: Doc, ov: Over
         ctx.fillStyle = fillStyle(ctx, it.fill);
         ctx.fillRect(it.rect.x, it.rect.y, it.rect.w, it.rect.h);
         ctx.globalAlpha = 1;
+        if (it.fill.type === 'solid' && it.fill.opacity < 0.04) invisible.push(it.rect);
       }
       if (it.stroke) {
+        ctx.globalAlpha = it.stroke.opacity;
         ctx.strokeStyle = it.stroke.hex;
         ctx.lineWidth = it.stroke.weight;
         ctx.strokeRect(it.rect.x, it.rect.y, it.rect.w, it.rect.h);
+        ctx.globalAlpha = 1;
+        if (it.stroke.opacity < 0.04) invisible.push(it.rect);
       }
     } else if (it.kind === 'path') {
       ctx.save();
@@ -79,18 +87,30 @@ export function draw(canvas: HTMLCanvasElement, scene: Scene, doc: Doc, ov: Over
     } else {
       ctx.globalAlpha = it.fill.type === 'solid' ? it.fill.opacity : 1;
       ctx.fillStyle = fillStyle(ctx, it.fill);
-      ctx.fillRect(it.rect.x, it.rect.y, it.rect.w, it.rect.h);
+      if (it.d) {
+        const p = new Path2D();
+        p.addPath(new Path2D(it.d), new DOMMatrix().translate(it.rect.x, it.rect.y));
+        ctx.fill(p);
+      } else ctx.fillRect(it.rect.x, it.rect.y, it.rect.w, it.rect.h);
       ctx.globalAlpha = 1;
+      if (it.fill.type === 'solid' && it.fill.opacity < 0.04) invisible.push(it.rect);
       if (it.text) {
         const left = it.text.align === 'left';
+        const t = it.textRect;
         ctx.fillStyle = it.text.hex;
         ctx.font = `700 ${it.text.size}px ${it.text.family}, Helvetica, Arial, sans-serif`;
         ctx.textBaseline = 'middle';
         ctx.textAlign = left ? 'left' : 'center';
-        ctx.fillText(it.text.value, left ? it.rect.x + it.rect.h * 0.2 : it.rect.x + it.rect.w / 2, it.rect.y + it.rect.h / 2);
+        ctx.fillText(it.text.value, left ? t.x + t.h * 0.2 : t.x + t.w / 2, t.y + t.h / 2);
       }
     }
   }
+  // Fully transparent shapes still exist, so the editor draws a dashed marker where they are.
+  ctx.strokeStyle = 'rgba(255,255,255,.35)';
+  ctx.lineWidth = 1.5 / scale;
+  ctx.setLineDash([5 / scale, 4 / scale]);
+  for (const r of invisible) ctx.strokeRect(r.x + 1 / scale, r.y + 1 / scale, r.w - 2 / scale, r.h - 2 / scale);
+  ctx.setLineDash([]);
   const mark = (keys: Iterable<number>, fill: string, stroke: string, shift = { dx: 0, dy: 0 }) => {
     ctx.fillStyle = fill;
     ctx.strokeStyle = stroke;
@@ -104,7 +124,16 @@ export function draw(canvas: HTMLCanvasElement, scene: Scene, doc: Doc, ov: Over
   };
   mark(ov.selection, 'rgba(166,107,255,.22)', 'rgba(166,107,255,.9)', ov.shift);
   if (ov.preview) mark(ov.preview, 'rgba(255,255,255,.18)', 'rgba(255,255,255,.7)');
-  if (ov.hover !== undefined) mark([ov.hover], 'rgba(255,255,255,.08)', 'rgba(255,255,255,.5)');
+  if (ov.hover !== undefined && ov.edge === undefined) mark([ov.hover], 'rgba(255,255,255,.08)', 'rgba(255,255,255,.5)');
+  if (ov.edge !== undefined) {
+    const l = edgeLine(doc, ov.edge);
+    ctx.strokeStyle = '#ff56e9';
+    ctx.lineWidth = 4 / scale;
+    ctx.beginPath();
+    ctx.moveTo(l.x0, l.y0);
+    ctx.lineTo(l.x1, l.y1);
+    ctx.stroke();
+  }
 }
 
 // Pixel-fade backdrop for the brand band, same idea as pixel-id-maker: drifting grid cells.

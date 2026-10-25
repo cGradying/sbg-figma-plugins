@@ -1,18 +1,40 @@
 import { MAX_CELLS, paintKey } from './model.ts';
-import type { Box, Doc, Gradient, Paint } from './model.ts';
+import type { Doc, FillPaint, Gradient, BoxText, Paint } from './model.ts';
 
-const VERSION = 1;
+const VERSION = 2;
 
 type Wire = {
   v: number;
   cols: number; rows: number; cell: number;
   canvas: { w: number; h: number };
-  grid: Doc['grid']; theme: string; mode: Doc['mode'];
+  gridOpacity: number; gridCut: number[]; theme: string; mode: Doc['mode'];
   paints: Paint[];
   runs: number[];
-  boxes: Box[];
+  boxes: { id: string; runs: number[]; fill: FillPaint; text?: BoxText }[];
   gradients: Gradient[];
 };
+
+// [start, length] pairs over the sorted keys.
+function toRuns(keys: Iterable<number>): number[] {
+  const runs: number[] = [];
+  for (const k of [...keys].sort((a, b) => a - b)) {
+    const n = runs.length;
+    if (n && runs[n - 2]! + runs[n - 1]! === k) runs[n - 1]!++;
+    else runs.push(k, 1);
+  }
+  return runs;
+}
+
+function fromRuns(runs: unknown, total: number): Set<number> {
+  if (!Array.isArray(runs) || runs.length % 2 !== 0) throw new Error('corrupt box data');
+  const keys = new Set<number>();
+  for (let i = 0; i < runs.length; i += 2) {
+    const [start, len] = [runs[i], runs[i + 1]];
+    if (!isNum(start) || !isNum(len) || start < 0 || len < 1 || start + len > total) throw new Error('corrupt box run');
+    for (let k = start; k < start + len; k++) keys.add(k);
+  }
+  return keys;
+}
 
 export function serialize(doc: Doc): string {
   const used = new Set<string>();
@@ -33,8 +55,9 @@ export function serialize(doc: Doc): string {
   const wire: Wire = {
     v: VERSION,
     cols: doc.cols, rows: doc.rows, cell: doc.cell, canvas: doc.canvas,
-    grid: doc.grid, theme: doc.theme, mode: doc.mode,
-    paints, runs, boxes: [...doc.boxes],
+    gridOpacity: doc.gridOpacity, gridCut: [...doc.gridCut].sort((a, b) => a - b), theme: doc.theme, mode: doc.mode,
+    paints, runs,
+    boxes: doc.boxes.map((b) => ({ id: b.id, runs: toRuns(b.keys), fill: b.fill, ...(b.text ? { text: b.text } : {}) })),
     gradients: Object.values(doc.gradients).filter((g) => used.has(g.id)),
   };
   return JSON.stringify(wire);
@@ -58,8 +81,10 @@ export function parse(json: string): Doc {
   }
   return {
     cols: w.cols, rows: w.rows, cell: w.cell, canvas: w.canvas,
-    grid: w.grid, theme: w.theme, mode: w.mode,
-    cells, boxes: w.boxes ?? [],
+    gridOpacity: isNum(w.gridOpacity) ? w.gridOpacity : 0.7, gridCut: new Set(Array.isArray(w.gridCut) ? w.gridCut.filter(isNum) : []),
+    theme: w.theme, mode: w.mode,
+    cells,
+    boxes: (w.boxes ?? []).map((b) => ({ id: b.id, keys: fromRuns(b.runs, total), fill: b.fill, ...(b.text ? { text: b.text } : {}) })),
     gradients: Object.fromEntries((w.gradients ?? []).map((g) => [g.id, g])),
   };
 }

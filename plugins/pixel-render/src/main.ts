@@ -72,7 +72,7 @@ function makeItem(it: Item, fonts: Map<string, FontName>): SceneNode {
     r.resize(it.rect.w, it.rect.h);
     r.fills = it.fill ? [paint(it.fill)] : [];
     if (it.stroke) {
-      r.strokes = [{ type: 'SOLID', color: rgb(it.stroke.hex) }];
+      r.strokes = [{ type: 'SOLID', color: rgb(it.stroke.hex), opacity: it.stroke.opacity }];
       r.strokeWeight = it.stroke.weight;
       r.strokeAlign = 'INSIDE';
     }
@@ -88,28 +88,53 @@ function makeItem(it: Item, fonts: Map<string, FontName>): SceneNode {
   box.x = it.rect.x;
   box.y = it.rect.y;
   box.resize(it.rect.w, it.rect.h);
-  box.fills = it.fill.type === 'solid' && it.fill.opacity === 0 ? [] : [paint(it.fill)];
   box.clipsContent = false;
-  if (it.text) {
-    box.layoutMode = 'HORIZONTAL';
-    box.primaryAxisSizingMode = 'FIXED';
-    box.counterAxisSizingMode = 'FIXED';
-    box.counterAxisAlignItems = 'CENTER';
-    box.primaryAxisAlignItems = it.text.align === 'left' ? 'MIN' : 'CENTER';
-    box.paddingLeft = box.paddingRight = Math.round(it.rect.h * 0.2);
+  const font = it.text ? (fonts.get(`${it.text.family}|${it.text.style}`) ?? FALLBACK_FONT) : FALLBACK_FONT;
+  const label = () => {
     const t = figma.createText();
-    t.fontName = fonts.get(`${it.text.family}|${it.text.style}`) ?? FALLBACK_FONT;
-    t.characters = it.text.value;
-    t.fontSize = it.text.size;
-    t.fills = [{ type: 'SOLID', color: rgb(it.text.hex) }];
+    t.fontName = font;
+    t.characters = it.text!.value;
+    t.fontSize = it.text!.size;
+    t.fills = [{ type: 'SOLID', color: rgb(it.text!.hex) }];
+    return t;
+  };
+  if (!it.d) {
+    box.fills = it.fill.type === 'solid' && it.fill.opacity === 0 ? [] : [paint(it.fill)];
+    if (it.text) {
+      box.layoutMode = 'HORIZONTAL';
+      box.primaryAxisSizingMode = 'FIXED';
+      box.counterAxisSizingMode = 'FIXED';
+      box.counterAxisAlignItems = 'CENTER';
+      box.primaryAxisAlignItems = it.text.align === 'left' ? 'MIN' : 'CENTER';
+      box.paddingLeft = box.paddingRight = Math.round(it.rect.h * 0.2);
+      box.appendChild(label());
+    }
+    return box;
+  }
+  // Irregular shape: the frame holds one outline vector, and the text floats in the biggest rectangle.
+  box.fills = [];
+  const shape = vector('Shape', it.d, { x: 0, y: 0 });
+  shape.fills = [paint(it.fill)];
+  box.appendChild(shape);
+  if (it.text) {
+    const t = label();
     box.appendChild(t);
+    const tr = it.textRect;
+    t.x = tr.x - it.rect.x + (it.text.align === 'left' ? tr.h * 0.2 : (tr.w - t.width) / 2);
+    t.y = tr.y - it.rect.y + (tr.h - t.height) / 2;
   }
   return box;
 }
 
+// Resizing the frame in Figma stretches every shape with it.
+const SCALE: Constraints = { horizontal: 'SCALE', vertical: 'SCALE' };
+
 function group(frame: FrameNode, name: string, nodes: SceneNode[]) {
   if (nodes.length === 0) return;
-  for (const n of nodes) frame.appendChild(n);
+  for (const n of nodes) {
+    frame.appendChild(n);
+    if ('constraints' in n) n.constraints = SCALE;
+  }
   figma.group(nodes, frame).name = name;
 }
 
@@ -118,6 +143,7 @@ async function draw(frame: FrameNode, doc: Doc, scene: Scene, save = true) {
   for (const c of [...frame.children]) c.remove();
   frame.resize(scene.canvas.w, scene.canvas.h);
   frame.clipsContent = true;
+  frame.exportSettings = [{ format: 'PNG', suffix: '@2x', constraint: { type: 'SCALE', value: 2 }, contentsOnly: true }, { format: 'SVG', suffix: '', contentsOnly: true }];
   frame.fills = scene.background ? [{ type: 'SOLID', color: rgb(scene.background) }] : [];
   if (scene.grid) {
     const g = vector('Grid', scene.grid.d, { x: 0, y: 0 });

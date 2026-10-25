@@ -23,16 +23,20 @@ export function sceneToSvg(scene: Scene): string {
   for (const it of scene.items) {
     if (it.kind === 'path') body.push(`<path transform="translate(${it.at.x} ${it.at.y})" d="${it.d}" ${fillAttr(it.fill)}/>`);
     else if (it.kind === 'rect') {
-      const stroke = it.stroke ? ` stroke="${it.stroke.hex}" stroke-width="${it.stroke.weight}"` : '';
+      const stroke = it.stroke ? ` stroke="${it.stroke.hex}" stroke-opacity="${it.stroke.opacity}" stroke-width="${it.stroke.weight}"` : '';
       body.push(`<rect x="${it.rect.x}" y="${it.rect.y}" width="${it.rect.w}" height="${it.rect.h}" ${fillAttr(it.fill)}${stroke}/>`);
     } else {
       const r = it.rect;
-      body.push(`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" ${fillAttr(it.fill)}/>`);
+      body.push(
+        it.d
+          ? `<path transform="translate(${r.x} ${r.y})" d="${it.d}" ${fillAttr(it.fill)}/>`
+          : `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" ${fillAttr(it.fill)}/>`,
+      );
       if (it.text) {
         const left = it.text.align === 'left';
-        const pad = r.h * 0.2;
+        const t = it.textRect;
         body.push(
-          `<text x="${left ? r.x + pad : r.x + r.w / 2}" y="${r.y + r.h / 2}" fill="${it.text.hex}" font-family="${esc(it.text.family)}, Helvetica, Arial, sans-serif" font-weight="700" font-size="${it.text.size}" text-anchor="${left ? 'start' : 'middle'}" dominant-baseline="central">${esc(it.text.value)}</text>`,
+          `<text x="${left ? t.x + t.h * 0.2 : t.x + t.w / 2}" y="${t.y + t.h / 2}" fill="${it.text.hex}" font-family="${esc(it.text.family)}, Helvetica, Arial, sans-serif" font-weight="700" font-size="${it.text.size}" text-anchor="${left ? 'start' : 'middle'}" dominant-baseline="central">${esc(it.text.value)}</text>`,
         );
       }
     }

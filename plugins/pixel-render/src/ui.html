@@ -7,21 +7,42 @@
 
   <main class="scroll">
     <section class="stage" aria-label="Pixel grid editor">
-      <div class="bar-row">
-        <div class="seg tools" id="tools" role="toolbar" aria-label="Tools">
-          <button data-tool="brush" class="on" title="Brush (B)">Brush</button>
-          <button data-tool="eraser" title="Eraser (E)">Erase</button>
-          <button data-tool="rect" title="Rectangle fill (R)">Rect</button>
-          <button data-tool="bucket" title="Bucket fill (G)">Bucket</button>
-          <button data-tool="select" title="Select and move (S)">Select</button>
-        </div>
-        <div class="row">
-          <button class="btn-sm" id="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">↶</button>
-          <button class="btn-sm" id="redo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo">↷</button>
+      <div class="tools" id="tools" role="toolbar" aria-label="Tools">
+        <button data-tool="brush" class="on" title="Brush (B): paint cells"><i data-icon="brush"></i><span>Brush</span></button>
+        <button data-tool="box" title="Box (A): add or grow a merged shape"><i data-icon="box"></i><span>Box</span></button>
+        <button data-tool="rect" title="Rectangle (R): fill an area"><i data-icon="rect"></i><span>Fill</span></button>
+        <button data-tool="bucket" title="Bucket (G): flood fill"><i data-icon="bucket"></i><span>Bucket</span></button>
+        <button data-tool="eraser" title="Eraser (E): erase cells, carve boxes"><i data-icon="eraser"></i><span>Erase</span></button>
+        <button data-tool="lines" title="Lines (L): hide single grid lines"><i data-icon="lines"></i><span>Lines</span></button>
+        <button data-tool="select" title="Select (S): select and move"><i data-icon="select"></i><span>Select</span></button>
+      </div>
+
+      <div class="cv-wrap">
+        <canvas id="cv" aria-label="Pixel grid"></canvas>
+        <div class="empty" id="empty">
+          <p>Pick a color, then drag on the grid.</p>
+          <button class="btn-sm" id="load-example">Load the Co-Lead example</button>
         </div>
       </div>
-      <div class="cv-wrap"><canvas id="cv" aria-label="Pixel grid"></canvas></div>
-      <p class="readout num" id="readout"></p>
+
+      <div class="hint-row">
+        <p class="hint" id="hint"></p>
+        <div class="row">
+          <button class="btn-sm icon" id="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo"><i data-icon="undo"></i></button>
+          <button class="btn-sm icon" id="redo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo"><i data-icon="redo"></i></button>
+        </div>
+      </div>
+
+      <div class="selbar" id="selbar" hidden>
+        <b class="num" id="sel-count">0 cells</b>
+        <button class="btn-sm" id="sel-merge" title="Merge the selected cells into one box">Merge</button>
+        <button class="btn-sm" id="sel-split" title="Turn the selected box back into cells">Split</button>
+        <button class="btn-sm" id="sel-paint" title="Paint the selected cells with the current color">Paint</button>
+        <button class="btn-sm" id="sel-more" title="Gradient, text and nudge">More</button>
+        <button class="btn-sm" id="sel-clear" title="Erase the selected cells (Delete)">Erase</button>
+        <button class="btn-sm icon" id="sel-off" title="Deselect (Esc)" aria-label="Deselect"><i data-icon="close"></i></button>
+      </div>
+
       <div class="paintbar">
         <div class="chips" id="chips" role="radiogroup" aria-label="Paint color"></div>
         <div class="row">
@@ -29,30 +50,80 @@
             <button data-kind="solid" class="on">Solid</button>
             <button data-kind="outline">Outline</button>
           </div>
-          <label class="op">Opacity <input type="range" id="opacity" min="10" max="100" value="100" aria-label="Opacity"><b class="num" id="opacity-v">100%</b></label>
+          <label class="op">Opacity <input type="range" id="opacity" min="0" max="100" value="100" aria-label="Opacity"><b class="num" id="opacity-v">100%</b></label>
         </div>
       </div>
     </section>
 
-    <details name="sec" open id="sec-canvas">
-      <summary>Canvas <span class="tag" id="tag-canvas"></span></summary>
+    <details name="sec" id="sec-sel">
+      <summary>Selection <span class="tag num" id="tag-sel">none</span></summary>
       <div class="inner">
-        <div class="seg full" id="canvas-preset">
-          <button data-w="1080" data-h="1080">1080 × 1080</button>
-          <button data-w="1080" data-h="1350">1080 × 1350</button>
+        <div class="grp">NUDGE</div>
+        <div class="nudge f">
+          <button class="btn-sm icon" data-n="0,-1" aria-label="Up"><i data-icon="up"></i></button>
+          <button class="btn-sm icon" data-n="-1,0" aria-label="Left"><i data-icon="left"></i></button>
+          <button class="btn-sm icon" data-n="1,0" aria-label="Right"><i data-icon="right"></i></button>
+          <button class="btn-sm icon" data-n="0,1" aria-label="Down"><i data-icon="down"></i></button>
         </div>
-        <div class="three f" style="margin-top:10px">
-          <div><label for="cw">Width</label><input type="number" id="cw" min="108" max="8000" step="1"></div>
-          <div><label for="ch">Height</label><input type="number" id="ch" min="108" max="8000" step="1"></div>
-          <div><label for="cell">Cell px</label><input type="number" id="cell" min="8" max="400" step="1"></div>
+        <div class="grp">GRADIENT</div>
+        <div class="three f">
+          <div><label for="g-a">From</label><select id="g-a"></select></div>
+          <div><label for="g-b">To</label><select id="g-b"></select></div>
+          <div><label for="g-angle">Angle</label><input type="number" id="g-angle" value="90" min="0" max="360"></div>
+        </div>
+        <div class="row f">
+          <div class="seg" id="g-mode"><button data-gm="stepped" class="on" title="Each cell gets one flat color">Stepped</button><button data-gm="smooth" title="One smooth Figma gradient">Smooth</button></div>
+          <button class="btn-sm" id="g-apply">Apply gradient</button>
+        </div>
+        <div class="grp">BOX TEXT</div>
+        <div class="f"><label for="t-value">Text (select one box)</label><input type="text" id="t-value" placeholder="Co-Lead"></div>
+        <div class="three f">
+          <div><label for="t-font">Font</label><input type="text" id="t-font" list="fonts" value="Inter"></div>
+          <div><label for="t-style">Style</label><input type="text" id="t-style" value="Bold"></div>
+          <div><label for="t-size">Size</label><input type="number" id="t-size" value="48" min="6" max="400"></div>
         </div>
         <div class="two f">
-          <div><label for="grid">Grid lines</label>
-            <select id="grid"><option value="faint">Faint</option><option value="visible">Visible</option><option value="off">Off</option></select></div>
-          <div><label>Mode</label>
-            <div class="seg full" id="mode"><button data-mode="standalone" class="on">Frame</button><button data-mode="overlay">Overlay</button></div></div>
+          <div><label for="t-role">Color</label><select id="t-role"></select></div>
+          <div><label>Align</label><div class="seg full" id="t-align"><button data-a="left">Left</button><button data-a="center" class="on">Center</button></div></div>
         </div>
-        <small class="note" id="mode-note">Frame makes its own frame. Overlay sizes the grid to the layer you select in Figma and lays it on top, with a transparent background.</small>
+        <button class="btn-sm" id="t-apply">Apply text</button>
+        <datalist id="fonts"></datalist>
+      </div>
+    </details>
+
+    <details name="sec" id="sec-fx">
+      <summary>Effects <span class="tag">on selection</span></summary>
+      <div class="inner">
+        <p class="note">Select cells first. Every effect works on the selection only.</p>
+        <div class="grp">PIXEL FADE</div>
+        <div class="three f">
+          <div><label for="fx-fade-edge">Toward</label><select id="fx-fade-edge"><option>right</option><option>left</option><option>top</option><option>bottom</option></select></div>
+          <div><label for="fx-fade-d">Density %</label><input type="number" id="fx-fade-d" value="80" min="0" max="100"></div>
+          <div><label for="fx-fade-s">Seed</label><input type="number" id="fx-fade-s" value="1"></div>
+        </div>
+        <button class="btn-sm f" data-fx="fade">Apply fade</button>
+        <div class="grp">STAIR STAGGER</div>
+        <div class="two f">
+          <div><label for="fx-stair-dir">Direction</label><select id="fx-stair-dir"><option value="1">Right</option><option value="-1">Left</option></select></div>
+          <div><label for="fx-stair-step">Rows per step</label><input type="number" id="fx-stair-step" value="1" min="1" max="20"></div>
+        </div>
+        <button class="btn-sm f" data-fx="stair">Apply stagger</button>
+        <div class="grp">HARD SHADOW</div>
+        <div class="three f">
+          <div><label for="fx-sh-x">Offset x</label><input type="number" id="fx-sh-x" value="1" min="-10" max="10"></div>
+          <div><label for="fx-sh-y">Offset y</label><input type="number" id="fx-sh-y" value="1" min="-10" max="10"></div>
+          <div><label for="fx-sh-role">Color</label><select id="fx-sh-role"></select></div>
+        </div>
+        <button class="btn-sm f" data-fx="shadow">Apply shadow</button>
+        <div class="grp">SEEDED SCATTER</div>
+        <div class="two f">
+          <div><label for="fx-sc-d">Density %</label><input type="number" id="fx-sc-d" value="30" min="0" max="100"></div>
+          <div><label for="fx-sc-s">Seed</label><input type="number" id="fx-sc-s" value="1"></div>
+        </div>
+        <div class="chips f" id="fx-sc-roles" aria-label="Scatter colors"></div>
+        <div class="row f"><button class="btn-sm" data-fx="scatter">Apply scatter</button><button class="btn-sm" id="fx-sc-roll">New seed</button></div>
+        <div class="grp">OUTLINE</div>
+        <div class="row f"><select id="fx-ol-role" aria-label="Outline color"></select><button class="btn-sm" data-fx="outline">Outline selection</button></div>
       </div>
     </details>
 
@@ -76,94 +147,37 @@
       </div>
     </details>
 
-    <details name="sec" id="sec-sel">
-      <summary>Selection <span class="tag num" id="tag-sel">none</span></summary>
+    <details name="sec" id="sec-canvas">
+      <summary>Canvas and lines <span class="tag num" id="tag-canvas"></span></summary>
       <div class="inner">
-        <div class="row wrap f">
-          <button class="btn-sm" id="sel-paint">Apply paint</button>
-          <button class="btn-sm" id="sel-merge">Merge into box</button>
-          <button class="btn-sm" id="sel-split">Split box</button>
-          <button class="btn-sm" id="sel-clear">Clear cells</button>
+        <div class="seg full" id="canvas-preset">
+          <button data-w="1080" data-h="1080">1080 × 1080</button>
+          <button data-w="1080" data-h="1350">1080 × 1350</button>
         </div>
-        <div class="grp">NUDGE</div>
-        <div class="nudge f">
-          <button class="btn-sm" data-n="0,-1" aria-label="Up">↑</button>
-          <button class="btn-sm" data-n="-1,0" aria-label="Left">←</button>
-          <button class="btn-sm" data-n="1,0" aria-label="Right">→</button>
-          <button class="btn-sm" data-n="0,1" aria-label="Down">↓</button>
+        <div class="three f" style="margin-top:10px">
+          <div><label for="cw">Width</label><input type="number" id="cw" min="108" max="8000" step="1"></div>
+          <div><label for="ch">Height</label><input type="number" id="ch" min="108" max="8000" step="1"></div>
+          <div><label for="cell">Cell px</label><input type="number" id="cell" min="8" max="400" step="1"></div>
         </div>
-        <div class="grp">GRADIENT</div>
-        <div class="three f">
-          <div><label for="g-a">From</label><select id="g-a"></select></div>
-          <div><label for="g-b">To</label><select id="g-b"></select></div>
-          <div><label for="g-angle">Angle</label><input type="number" id="g-angle" value="90" min="0" max="360"></div>
-        </div>
-        <div class="row f">
-          <div class="seg" id="g-mode"><button data-gm="stepped" class="on">Stepped</button><button data-gm="smooth">Smooth</button></div>
-          <button class="btn-sm" id="g-apply">Apply gradient</button>
-        </div>
-        <div class="grp">BOX TEXT</div>
-        <div class="f"><label for="t-value">Text (select one box)</label><input type="text" id="t-value" placeholder="Co-Lead"></div>
-        <div class="three f">
-          <div><label for="t-font">Font</label><input type="text" id="t-font" list="fonts" value="Inter"></div>
-          <div><label for="t-style">Style</label><input type="text" id="t-style" value="Bold"></div>
-          <div><label for="t-size">Size</label><input type="number" id="t-size" value="48" min="6" max="400"></div>
-        </div>
-        <div class="two f">
-          <div><label for="t-role">Color</label><select id="t-role"></select></div>
-          <div><label>Align</label><div class="seg full" id="t-align"><button data-a="left">Left</button><button data-a="center" class="on">Center</button></div></div>
-        </div>
-        <button class="btn-sm" id="t-apply">Apply text</button>
-        <datalist id="fonts"></datalist>
-      </div>
-    </details>
-
-    <details name="sec" id="sec-fx">
-      <summary>Effects <span class="tag">on selection</span></summary>
-      <div class="inner">
-        <div class="grp">PIXEL FADE</div>
-        <div class="three f">
-          <div><label for="fx-fade-edge">Toward</label><select id="fx-fade-edge"><option>right</option><option>left</option><option>top</option><option>bottom</option></select></div>
-          <div><label for="fx-fade-d">Density</label><input type="number" id="fx-fade-d" value="80" min="0" max="100"></div>
-          <div><label for="fx-fade-s">Seed</label><input type="number" id="fx-fade-s" value="1"></div>
-        </div>
-        <button class="btn-sm f" data-fx="fade">Apply fade</button>
-        <div class="grp">STAIR STAGGER</div>
-        <div class="two f">
-          <div><label for="fx-stair-dir">Direction</label><select id="fx-stair-dir"><option value="1">Right</option><option value="-1">Left</option></select></div>
-          <div><label for="fx-stair-step">Rows per step</label><input type="number" id="fx-stair-step" value="1" min="1" max="20"></div>
-        </div>
-        <button class="btn-sm f" data-fx="stair">Apply stagger</button>
-        <div class="grp">HARD SHADOW</div>
-        <div class="three f">
-          <div><label for="fx-sh-x">Offset x</label><input type="number" id="fx-sh-x" value="1" min="-10" max="10"></div>
-          <div><label for="fx-sh-y">Offset y</label><input type="number" id="fx-sh-y" value="1" min="-10" max="10"></div>
-          <div><label for="fx-sh-role">Color</label><select id="fx-sh-role"></select></div>
-        </div>
-        <button class="btn-sm f" data-fx="shadow">Apply shadow</button>
-        <div class="grp">SEEDED SCATTER</div>
-        <div class="two f">
-          <div><label for="fx-sc-d">Density</label><input type="number" id="fx-sc-d" value="30" min="0" max="100"></div>
-          <div><label for="fx-sc-s">Seed</label><input type="number" id="fx-sc-s" value="1"></div>
-        </div>
-        <div class="chips f" id="fx-sc-roles" aria-label="Scatter colors"></div>
-        <div class="row f"><button class="btn-sm" data-fx="scatter">Apply scatter</button><button class="btn-sm" id="fx-sc-roll">New seed</button></div>
-        <div class="grp">OUTLINE</div>
-        <div class="row f"><select id="fx-ol-role" aria-label="Outline color"></select><button class="btn-sm" data-fx="outline">Outline selection</button></div>
+        <div class="f"><label>Mode</label>
+          <div class="seg full" id="mode"><button data-mode="standalone" class="on">Frame</button><button data-mode="overlay">Overlay on a layer</button></div>
+          <small class="note" id="mode-note">Frame makes its own frame. Overlay sizes the grid to the layer you select in Figma, lays a transparent frame on top, and turns the grid lines off.</small></div>
+        <div class="f"><label for="grid-op">Grid line opacity <b class="num" id="grid-op-v"></b></label>
+          <input type="range" id="grid-op" min="0" max="100" value="70" aria-label="Grid line opacity">
+          <div class="row" style="margin-top:6px"><button class="btn-sm" id="lines-restore">Restore hidden lines</button><span class="note" id="lines-count"></span></div>
+          <small class="note">Use the Lines tool to hide one segment at a time. Boxes stay.</small></div>
       </div>
     </details>
   </main>
 
   <footer class="dock">
-    <div class="row wrap">
-      <button class="btn" id="render-new">Render to Figma</button>
-    </div>
-    <div class="row wrap">
-      <button class="btn alt" id="render-update" disabled>Update frame</button>
-      <button class="btn alt" id="render-load" disabled>Edit frame</button>
-      <button class="btn alt" id="render-flat" disabled>Flatten copy</button>
+    <button class="btn" id="render-new">Render to Figma</button>
+    <div class="row">
+      <button class="btn alt" id="render-update" disabled title="Select a Pixel Render frame in Figma">Update frame</button>
+      <button class="btn alt" id="render-load" disabled title="Select a Pixel Render frame in Figma">Edit frame</button>
+      <button class="btn alt" id="render-flat" disabled title="Select a Pixel Render frame in Figma">Flatten copy</button>
     </div>
     <p class="status" id="status" role="status"></p>
-    <p class="credit">Pixel Render <span id="version">v0.1</span> · made by cgradying</p>
+    <p class="credit">Pixel Render <span id="version">v0.2</span> · made by cgradying</p>
   </footer>
 </div>

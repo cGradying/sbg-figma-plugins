@@ -1,13 +1,14 @@
 import {
   BUILT_IN, applyGradient, bucket, buildScene, cellKey, coLead, eraseCells, exportTheme, fillRect, history,
-  hardShadow, importTheme, merge, moveSelection, newDoc, outline, paintCells, parse, pixelFade, rectKeys,
-  resize, seededScatter, selectionBounds, serialize, split, stairStagger, updateBox, boxAt, boxesInside,
+  hardShadow, importTheme, merge, moveSelection, nearestEdge, newDoc, outline, paintCells, parse, pixelFade, rectKeys,
+  resize, seededScatter, serialize, setLines, split, stairStagger, updateBox, boxAt, boxesInside,
 } from '@sbg/core';
-import type { Box, Doc, Paint, Theme } from '@sbg/core';
+import type { Box, Doc, FillPaint, Paint, Theme } from '@sbg/core';
 import type { SelectionInfo, ToMain, ToUI } from './messages.ts';
+import { mountIcons } from './icons.ts';
 import { draw, fadeBand } from './view.ts';
 
-type Tool = 'brush' | 'eraser' | 'rect' | 'bucket' | 'select';
+type Tool = 'brush' | 'box' | 'rect' | 'bucket' | 'eraser' | 'lines' | 'select';
 type Cell = { x: number; y: number };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -29,6 +30,7 @@ const st = {
   align: 'center' as 'left' | 'center',
   scatterRoles: new Set<string>(['purple', 'pink']),
   hover: undefined as number | undefined,
+  edge: undefined as number | undefined,
   working: undefined as Doc | undefined,
   preview: undefined as ReadonlySet<number> | undefined,
   shift: undefined as { dx: number; dy: number } | undefined,
@@ -45,15 +47,40 @@ function status(msg: string, kind: '' | 'ok' | 'err' = '') {
   el.className = `status ${kind}`;
 }
 
+const HINTS: Record<Tool, string> = {
+  brush: '<b>Brush.</b> Click or drag to paint cells.',
+  box: '<b>Box.</b> Drag a rectangle to add a box. Drag over a box to grow it.',
+  rect: '<b>Fill.</b> Drag a rectangle to fill it with the color.',
+  bucket: '<b>Bucket.</b> Click to flood an empty or same-colored area.',
+  eraser: '<b>Erase.</b> Drag over cells. On a box it carves out only those cells.',
+  lines: '<b>Lines.</b> Click or drag across a grid line to hide it. Shift restores.',
+  select: '<b>Select.</b> Drag to select, click a box to pick it, Shift adds, drag a selection to move it.',
+};
+
 let saveTimer = 0;
 function redraw() {
   const d = doc();
   const scene = buildScene(d, theme());
-  draw($<HTMLCanvasElement>('cv'), scene, d, { selection: st.sel, ...(st.hover === undefined ? {} : { hover: st.hover }), ...(st.preview ? { preview: st.preview } : {}), ...(st.shift ? { shift: st.shift } : {}) });
-  $('readout').textContent = `${d.cols}×${d.rows} cells · ${d.cell}px · ${d.canvas.w}×${d.canvas.h} · ${d.cells.size} cells, ${d.boxes.length} boxes`;
+  draw($<HTMLCanvasElement>('cv'), scene, d, {
+    selection: st.sel,
+    ...(st.hover === undefined ? {} : { hover: st.hover }),
+    ...(st.edge === undefined ? {} : { edge: st.edge }),
+    ...(st.preview ? { preview: st.preview } : {}),
+    ...(st.shift ? { shift: st.shift } : {}),
+  });
   $('tag-canvas').textContent = `${d.canvas.w}×${d.canvas.h}`;
   $('tag-theme').textContent = theme().name;
   $('tag-sel').textContent = st.sel.size ? `${st.sel.size} cells` : 'none';
+  $('hint').innerHTML = HINTS[st.tool];
+  $('empty').hidden = d.cells.size > 0 || d.boxes.length > 0;
+  const whole = boxesInside(st.hist.present, st.sel);
+  $('selbar').hidden = st.sel.size === 0;
+  $('sel-count').textContent = `${st.sel.size} cell${st.sel.size === 1 ? '' : 's'}`;
+  ($('sel-split') as HTMLButtonElement).disabled = whole.length === 0;
+  $<HTMLInputElement>('grid-op').value = String(Math.round(d.gridOpacity * 100));
+  $('grid-op-v').textContent = `${Math.round(d.gridOpacity * 100)}%`;
+  $('lines-count').textContent = d.gridCut.size ? `${d.gridCut.size} hidden` : '';
+  ($('lines-restore') as HTMLButtonElement).disabled = d.gridCut.size === 0;
   ($('undo') as HTMLButtonElement).disabled = st.hist.past.length === 0;
   ($('redo') as HTMLButtonElement).disabled = st.hist.future.length === 0;
   syncDock();
@@ -71,8 +98,9 @@ function attempt(fn: () => void) {
   try { fn(); } catch (e) { status(e instanceof Error ? e.message : String(e), 'err'); }
 }
 
-const currentPaint = (): Paint =>
-  st.kind === 'outline' ? { kind: 'outline', role: st.role, weight: 3 } : { kind: 'solid', role: st.role, ...(st.opacity < 1 ? { opacity: st.opacity } : {}) };
+const opacityPart = () => (st.opacity < 1 ? { opacity: st.opacity } : {});
+const currentPaint = (): Paint => (st.kind === 'outline' ? { kind: 'outline', role: st.role, weight: 3, ...opacityPart() } : { kind: 'solid', role: st.role, ...opacityPart() });
+const boxFill = (): FillPaint => ({ kind: 'solid', role: st.role, ...opacityPart() });
 
 /* ---------- palette and theme controls ---------- */
 
@@ -203,7 +231,6 @@ function syncCanvasInputs() {
   $<HTMLInputElement>('cw').value = String(d.canvas.w);
   $<HTMLInputElement>('ch').value = String(d.canvas.h);
   $<HTMLInputElement>('cell').value = String(d.cell);
-  $<HTMLSelectElement>('grid').value = d.grid;
   for (const b of $('mode').children) b.classList.toggle('on', (b as HTMLElement).dataset.mode === d.mode);
   for (const b of $('canvas-preset').children) b.classList.toggle('on', Number((b as HTMLElement).dataset.w) === d.canvas.w && Number((b as HTMLElement).dataset.h) === d.canvas.h);
 }
@@ -214,9 +241,13 @@ function setCanvas(w: number, h: number, cell = st.hist.present.cell) {
 
 for (const b of $('canvas-preset').children) (b as HTMLElement).onclick = () => setCanvas(Number((b as HTMLElement).dataset.w), Number((b as HTMLElement).dataset.h));
 for (const id of ['cw', 'ch', 'cell']) $(id).onchange = () => setCanvas(Number($<HTMLInputElement>('cw').value), Number($<HTMLInputElement>('ch').value), Number($<HTMLInputElement>('cell').value));
-$('grid').onchange = (e) => { apply({ ...st.hist.present, grid: (e.target as HTMLSelectElement).value as Doc['grid'] }); };
+$('grid-op').oninput = (e) => { st.working = { ...st.hist.present, gridOpacity: Number((e.target as HTMLInputElement).value) / 100 }; redraw(); };
+$('grid-op').onchange = () => { if (st.working) apply(st.working); };
+$('lines-restore').onclick = () => apply({ ...st.hist.present, gridCut: new Set() });
 for (const b of $('mode').children) (b as HTMLElement).onclick = () => {
-  apply({ ...st.hist.present, mode: (b as HTMLElement).dataset.mode as Doc['mode'] });
+  const mode = (b as HTMLElement).dataset.mode as Doc['mode'];
+  const d = st.hist.present;
+  apply({ ...d, mode, gridOpacity: mode === 'overlay' ? 0 : d.gridOpacity || 0.7 });
   syncCanvasInputs();
   matchTarget();
 };
@@ -231,7 +262,9 @@ function matchTarget() {
 for (const b of $('tools').children) (b as HTMLElement).onclick = () => setTool((b as HTMLElement).dataset.tool as Tool);
 function setTool(t: Tool) {
   st.tool = t;
+  st.edge = undefined;
   for (const b of $('tools').children) b.classList.toggle('on', (b as HTMLElement).dataset.tool === t);
+  redraw();
 }
 for (const b of $('paint-kind').children) (b as HTMLElement).onclick = () => {
   st.kind = (b as HTMLElement).dataset.kind as 'solid' | 'outline';
@@ -260,20 +293,30 @@ function line(a: Cell, b: Cell): Cell[] {
   return out;
 }
 
-type Drag = { start: Cell; last: Cell; moving: boolean };
+type Drag = { start: Cell; last: Cell; moving: boolean; edges?: Set<number>; restore: boolean };
 let drag: Drag | undefined;
+
+function edgeAt(e: PointerEvent): number | undefined {
+  const r = cv.getBoundingClientRect();
+  const d = st.hist.present;
+  return nearestEdge(d, ((e.clientX - r.left) / r.width) * d.canvas.w, ((e.clientY - r.top) / r.height) * d.canvas.h);
+}
 
 cv.onpointerdown = (e) => {
   cv.setPointerCapture(e.pointerId);
   const c = cellAt(e);
   const d = st.hist.present;
-  drag = { start: c, last: c, moving: false };
+  drag = { start: c, last: c, moving: false, restore: e.shiftKey };
   const k = cellKey(d, c.x, c.y);
   if (st.tool === 'brush') st.working = paintCells(d, [k], currentPaint());
   else if (st.tool === 'eraser') st.working = eraseCells(d, [k]);
   else if (st.tool === 'bucket') { apply(bucket(d, c, currentPaint())); drag = undefined; return; }
-  else if (st.tool === 'rect') st.preview = new Set([k]);
-  else if (st.tool === 'select') {
+  else if (st.tool === 'rect' || st.tool === 'box') st.preview = new Set([k]);
+  else if (st.tool === 'lines') {
+    drag.edges = new Set();
+    const id = edgeAt(e);
+    if (id !== undefined) { drag.edges.add(id); st.working = setLines(d, drag.edges, !drag.restore); }
+  } else if (st.tool === 'select') {
     if (st.sel.has(k)) { drag.moving = true; st.shift = { dx: 0, dy: 0 }; }
     else st.preview = new Set([k]);
   }
@@ -282,22 +325,24 @@ cv.onpointerdown = (e) => {
 
 cv.onpointermove = (e) => {
   const c = cellAt(e);
-  const d = doc();
+  const d = st.hist.present;
   st.hover = cellKey(d, c.x, c.y);
+  st.edge = st.tool === 'lines' ? edgeAt(e) : undefined;
   if (drag) {
-    const base = st.hist.present;
     if (st.tool === 'brush' || st.tool === 'eraser') {
-      const keys = line(drag.last, c).map((p) => cellKey(base, p.x, p.y));
+      const keys = line(drag.last, c).map((p) => cellKey(d, p.x, p.y));
       st.working = st.tool === 'brush' ? paintCells(doc(), keys, currentPaint()) : eraseCells(doc(), keys);
-    } else if (st.tool === 'rect' || (st.tool === 'select' && !drag.moving)) st.preview = rectKeys(base, drag.start, c);
+    } else if (st.tool === 'lines' && drag.edges && st.edge !== undefined && !drag.edges.has(st.edge)) {
+      drag.edges.add(st.edge);
+      st.working = setLines(d, drag.edges, !drag.restore);
+    } else if (st.tool === 'rect' || st.tool === 'box' || (st.tool === 'select' && !drag.moving)) st.preview = rectKeys(d, drag.start, c);
     else if (drag.moving) st.shift = { dx: c.x - drag.start.x, dy: c.y - drag.start.y };
     drag.last = c;
   }
-  $('readout').textContent = `cell ${c.x}, ${c.y} · ${d.cols}×${d.rows} · ${d.cell}px`;
   redraw();
 };
 
-cv.onpointerleave = () => { st.hover = undefined; if (!drag) redraw(); };
+cv.onpointerleave = () => { st.hover = undefined; st.edge = undefined; if (!drag) redraw(); };
 
 cv.onpointerup = (e) => {
   if (!drag) return;
@@ -306,9 +351,16 @@ cv.onpointerup = (e) => {
   const { start, moving } = drag;
   drag = undefined;
   attempt(() => {
-    if (st.tool === 'brush' || st.tool === 'eraser') { if (st.working) apply(st.working); }
+    if (st.tool === 'brush' || st.tool === 'eraser' || st.tool === 'lines') {
+      if (st.working) apply(st.working);
+      if (st.tool === 'eraser') st.sel = new Set();
+    }
     else if (st.tool === 'rect') apply(fillRect(d, start, c, currentPaint()));
-    else if (st.tool === 'select') {
+    else if (st.tool === 'box') {
+      const next = merge(d, rectKeys(d, start, c), boxFill());
+      apply(next);
+      st.sel = new Set(boxAt(next, start.x, start.y)?.keys ?? []);
+    } else if (st.tool === 'select') {
       if (moving) {
         const out = moveSelection(d, st.sel, c.x - start.x, c.y - start.y);
         st.sel = out.selection;
@@ -316,7 +368,7 @@ cv.onpointerup = (e) => {
       } else {
         const keys = new Set(rectKeys(d, start, c));
         const b = start.x === c.x && start.y === c.y ? boxAt(d, c.x, c.y) : undefined;
-        if (b) for (const k of rectKeys(d, { x: b.x, y: b.y }, { x: b.x + b.w - 1, y: b.y + b.h - 1 })) keys.add(k);
+        if (b) for (const k of b.keys) keys.add(k);
         st.sel = e.shiftKey ? new Set([...st.sel, ...keys]) : keys;
       }
     }
@@ -332,7 +384,7 @@ document.onkeydown = (e) => {
   if ((e.target as HTMLElement).matches('input,textarea,select')) return;
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? $('redo') : $('undo')).click(); return; }
-  const keys: Record<string, Tool> = { b: 'brush', e: 'eraser', r: 'rect', g: 'bucket', s: 'select' };
+  const keys: Record<string, Tool> = { b: 'brush', a: 'box', r: 'rect', g: 'bucket', e: 'eraser', l: 'lines', s: 'select' };
   const tool = keys[e.key.toLowerCase()];
   if (tool && !mod) setTool(tool);
   if (e.key === 'Escape') { st.sel = new Set(); redraw(); }
@@ -353,17 +405,19 @@ function needSel(fn: (sel: ReadonlySet<number>) => void) {
 
 $('sel-paint').onclick = () => needSel((s) => apply(paintCells(st.hist.present, s, currentPaint())));
 $('sel-clear').onclick = () => needSel((s) => apply(eraseCells(st.hist.present, s)));
+$('sel-off').onclick = () => { st.sel = new Set(); redraw(); };
+$('sel-more').onclick = () => { $<HTMLDetailsElement>('sec-sel').open = true; $('sec-sel').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); };
 $('sel-merge').onclick = () => needSel((s) => {
-  const b = selectionBounds(st.hist.present, s)!;
-  apply(merge(st.hist.present, { x: b.x, y: b.y }, { x: b.x + b.w - 1, y: b.y + b.h - 1 }));
-  st.sel = new Set(rectKeys(st.hist.present, { x: b.x, y: b.y }, { x: b.x + b.w - 1, y: b.y + b.h - 1 }));
+  const next = merge(st.hist.present, s);
+  apply(next);
+  st.sel = new Set(next.boxes.find((b) => [...s].some((k) => b.keys.has(k)))?.keys ?? s);
   fillTextForm();
   redraw();
 });
-$('sel-split').onclick = () => needSel(() => {
-  const b = selBox();
-  if (!b) throw new Error('Select exactly one box to split it.');
-  apply(split(st.hist.present, b.id));
+$('sel-split').onclick = () => needSel((s) => {
+  const boxes = boxesInside(st.hist.present, s);
+  if (!boxes.length) throw new Error('Select a whole box to split it.');
+  apply(boxes.reduce((d, b) => split(d, b.id), st.hist.present));
 });
 for (const b of document.querySelectorAll<HTMLElement>('[data-n]')) b.onclick = () => needSel((s) => {
   const [dx, dy] = b.dataset.n!.split(',').map(Number) as [number, number];
@@ -463,12 +517,15 @@ $('render-flat').onclick = () => {
 };
 $('render-load').onclick = () => attempt(() => {
   if (st.fsel.kind !== 'pixel') return;
-  const d = parse(st.fsel.doc);
+  const { target } = st.fsel;
+  let d = parse(st.fsel.doc);
+  const resized = target.w !== d.canvas.w || target.h !== d.canvas.h;
+  if (resized) d = resize(d, { canvas: { w: target.w, h: target.h }, cell: d.cell });
   st.sel = new Set();
   apply(d);
   syncCanvasInputs();
   renderThemePanel();
-  status(`Loaded ${st.fsel.target.name}`, 'ok');
+  status(resized ? `Loaded ${target.name}. The grid now matches its resized frame.` : `Loaded ${target.name}`, 'ok');
 });
 
 function onMessage(m: ToUI) {
@@ -491,9 +548,12 @@ window.addEventListener('message', (e) => { if (e.data?.pluginMessage) onMessage
 window.addEventListener('dev-incoming', (e) => onMessage((e as CustomEvent<ToUI>).detail));
 window.addEventListener('resize', redraw);
 
-export const dev = { loadExample: () => { apply(coLead()); syncCanvasInputs(); renderThemePanel(); }, state: st };
+const loadExample = () => { st.sel = new Set(); apply(coLead()); syncCanvasInputs(); renderThemePanel(); };
+$('load-example').onclick = loadExample;
+export const dev = { loadExample, state: st };
 (window as unknown as { pixelRender: typeof dev }).pixelRender = dev;
 
+mountIcons();
 fadeBand($<HTMLCanvasElement>('fade'));
 syncCanvasInputs();
 renderThemePanel();

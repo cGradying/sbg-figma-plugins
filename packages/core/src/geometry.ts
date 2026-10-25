@@ -1,4 +1,4 @@
-import { cellXY } from './model.ts';
+import { cellXY, components, hEdge, vEdge } from './model.ts';
 import type { Doc, Rect } from './model.ts';
 
 // Greedy cover of a cell set with few rectangles, in grid units: horizontal runs per row,
@@ -36,23 +36,76 @@ export function mergeRects(doc: Pick<Doc, 'cols'>, keys: Iterable<number>): Rect
   return out;
 }
 
-// M/L/Z only, the commands Figma's vectorPaths accepts everywhere. Coordinates are relative to `origin` (in cells).
-export function rectsPath(rects: readonly Rect[], cell: number, origin: { x: number; y: number } = { x: 0, y: 0 }): string {
-  return rects
-    .map((r) => {
-      const [x0, y0, x1, y1] = [(r.x - origin.x) * cell, (r.y - origin.y) * cell, (r.x + r.w - origin.x) * cell, (r.y + r.h - origin.y) * cell];
-      return `M${x0} ${y0}L${x1} ${y0}L${x1} ${y1}L${x0} ${y1}Z`;
-    })
-    .join('');
-}
+// The largest rectangle of the cover, used to place text inside an irregular shape.
+export const biggestRect = (doc: Pick<Doc, 'cols'>, keys: Iterable<number>): Rect =>
+  mergeRects(doc, keys).reduce((a, b) => (b.w * b.h > a.w * a.h ? b : a));
 
-export function pathOrigin(rects: readonly Rect[]): { x: number; y: number } {
-  return { x: Math.min(...rects.map((r) => r.x)), y: Math.min(...rects.map((r) => r.y)) };
-}
-
-export function gridPath(canvas: { w: number; h: number }, cell: number): string {
+// Outline of a cell set as M/L/Z loops, coordinates relative to `origin` (in cells) and scaled by `cell`.
+// One loop per boundary. Holes wind the opposite way, so a NONZERO fill leaves them empty.
+// Only M/L/Z, the commands Figma's vectorPaths accepts everywhere.
+export function outlinePath(doc: Pick<Doc, 'cols' | 'cell'>, keys: Iterable<number>, origin: { x: number; y: number } = { x: 0, y: 0 }): string {
+  const set = new Set(keys);
+  const W = doc.cols + 1;
+  const out = new Map<number, number[]>();
+  const edge = (x0: number, y0: number, x1: number, y1: number) => {
+    const a = y0 * W + x0;
+    (out.get(a) ?? out.set(a, []).get(a)!).push(y1 * W + x1);
+  };
+  const has = (x: number, y: number) => x >= 0 && x < doc.cols && y >= 0 && set.has(y * doc.cols + x);
+  for (const k of set) {
+    const { x, y } = cellXY(doc, k);
+    if (!has(x, y - 1)) edge(x, y, x + 1, y);
+    if (!has(x + 1, y)) edge(x + 1, y, x + 1, y + 1);
+    if (!has(x, y + 1)) edge(x + 1, y + 1, x, y + 1);
+    if (!has(x - 1, y)) edge(x, y + 1, x, y);
+  }
   let d = '';
-  for (let x = cell; x < canvas.w; x += cell) d += `M${x} 0L${x} ${canvas.h}`;
-  for (let y = cell; y < canvas.h; y += cell) d += `M0 ${y}L${canvas.w} ${y}`;
+  for (const [start, ends] of out) {
+    while (ends.length) {
+      const pts: number[] = [];
+      let cur = start;
+      for (;;) {
+        const next = out.get(cur)?.pop();
+        if (next === undefined) break;
+        pts.push(cur);
+        cur = next;
+        if (cur === start) break;
+      }
+      const at = (v: number) => ({ x: v % W, y: Math.floor(v / W) });
+      const corners = pts.filter((v, i) => {
+        const a = at(pts[(i + pts.length - 1) % pts.length]!), b = at(v), c = at(pts[(i + 1) % pts.length]!);
+        return (b.x - a.x) * (c.y - b.y) !== (b.y - a.y) * (c.x - b.x);
+      });
+      d += corners
+        .map((v, i) => `${i ? 'L' : 'M'}${(at(v).x - origin.x) * doc.cell} ${(at(v).y - origin.y) * doc.cell}`)
+        .join('') + 'Z';
+    }
+  }
+  return d;
+}
+
+export const isRectangle = (doc: Pick<Doc, 'cols'>, keys: ReadonlySet<number>, bounds: Rect): boolean =>
+  keys.size === bounds.w * bounds.h && components(doc.cols, keys).length === 1;
+
+// Interior grid lines, one segment per cell edge, with hidden segments left out and runs joined.
+export function gridPath(doc: Pick<Doc, 'cols' | 'rows' | 'cell' | 'canvas' | 'gridCut'>): string {
+  const { cell, canvas } = doc;
+  let d = '';
+  for (let x = 1; x < doc.cols && x * cell < canvas.w; x++) {
+    for (let y = 0; y < doc.rows; y++) {
+      if (doc.gridCut.has(vEdge(doc, x, y))) continue;
+      const y0 = y;
+      while (y + 1 < doc.rows && !doc.gridCut.has(vEdge(doc, x, y + 1))) y++;
+      d += `M${x * cell} ${y0 * cell}L${x * cell} ${Math.min((y + 1) * cell, canvas.h)}`;
+    }
+  }
+  for (let y = 1; y < doc.rows && y * cell < canvas.h; y++) {
+    for (let x = 0; x < doc.cols; x++) {
+      if (doc.gridCut.has(hEdge(doc, x, y))) continue;
+      const x0 = x;
+      while (x + 1 < doc.cols && !doc.gridCut.has(hEdge(doc, x + 1, y))) x++;
+      d += `M${x0 * cell} ${y * cell}L${Math.min((x + 1) * cell, canvas.w)} ${y * cell}`;
+    }
+  }
   return d;
 }

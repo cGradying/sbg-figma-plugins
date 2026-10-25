@@ -1,5 +1,5 @@
-import { boxAt, boxCovers, cellKey, cellXY, inBounds, newDoc, paintKey } from './model.ts';
-import type { Box, Doc, Paint, Rect } from './model.ts';
+import { boxAt, cellKey, cellXY, components, inBounds, keysBounds, newDoc, paintKey } from './model.ts';
+import type { Box, Doc, FillPaint, Paint, Rect } from './model.ts';
 
 export type Selection = ReadonlySet<number>;
 
@@ -19,15 +19,7 @@ export function rectKeys(doc: Doc, a: { x: number; y: number }, b: { x: number; 
   return keys;
 }
 
-export function selectionBounds(doc: Doc, sel: Selection): Rect | undefined {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const k of sel) {
-    const { x, y } = cellXY(doc, k);
-    x0 = Math.min(x0, x); y0 = Math.min(y0, y);
-    x1 = Math.max(x1, x); y1 = Math.max(y1, y);
-  }
-  return x0 === Infinity ? undefined : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
-}
+export const selectionBounds = (doc: Doc, sel: Selection): Rect | undefined => keysBounds(doc, sel);
 
 export function paintCells(doc: Doc, keys: Iterable<number>, paint: Paint): Doc {
   return withCells(doc, (cells) => {
@@ -38,15 +30,30 @@ export function paintCells(doc: Doc, keys: Iterable<number>, paint: Paint): Doc 
   });
 }
 
+const nextBoxIds = (doc: Doc, n: number): string[] => {
+  const top = Math.max(0, ...doc.boxes.map((b) => Number(b.id.slice(1))));
+  return Array.from({ length: n }, (_, i) => `b${top + 1 + i}`);
+};
+
+// Removes cells, and carves the cells out of any box they touch. A box that falls into
+// separate pieces keeps its id and text on the biggest piece, the others become new boxes.
 export function eraseCells(doc: Doc, keys: Iterable<number>): Doc {
-  const list = [...keys];
-  const hit = new Set(
-    doc.boxes.filter((b) => list.some((k) => { const { x, y } = cellXY(doc, k); return boxCovers(b, x, y); })).map((b) => b.id),
-  );
-  return {
-    ...withCells(doc, (cells) => { for (const k of list) cells.delete(k); }),
-    boxes: doc.boxes.filter((b) => !hit.has(b.id)),
-  };
+  const gone = new Set(keys);
+  const cells = new Map(doc.cells);
+  for (const k of gone) cells.delete(k);
+  const boxes: Box[] = [];
+  const pending: Box[] = [];
+  for (const b of doc.boxes) {
+    if (![...b.keys].some((k) => gone.has(k))) { boxes.push(b); continue; }
+    const parts = components(doc.cols, [...b.keys].filter((k) => !gone.has(k))).sort((p, q) => q.length - p.length);
+    parts.forEach((part, i) => {
+      if (i === 0) boxes.push({ ...b, keys: new Set(part) });
+      else pending.push({ id: '', keys: new Set(part), fill: b.fill });
+    });
+  }
+  const ids = nextBoxIds({ ...doc, boxes }, pending.length);
+  pending.forEach((b, i) => boxes.push({ ...b, id: ids[i]! }));
+  return { ...doc, cells, boxes };
 }
 
 export const fillRect = (doc: Doc, a: { x: number; y: number }, b: { x: number; y: number }, paint: Paint): Doc =>
@@ -72,29 +79,38 @@ export function bucket(doc: Doc, at: { x: number; y: number }, paint: Paint): Do
   return paintCells(doc, seen, paint);
 }
 
-const nextBoxId = (doc: Doc): string =>
-  `b${1 + Math.max(0, ...doc.boxes.map((b) => Number(b.id.slice(1))))}`;
+const solidOnly = (p: Paint | undefined): FillPaint | undefined => (p && p.kind !== 'outline' ? p : undefined);
 
-export function merge(doc: Doc, a: { x: number; y: number }, b: { x: number; y: number }, fill?: Paint): Doc {
-  const keys = rectKeys(doc, a, b);
-  const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y);
-  const rect = { x: Math.max(0, x0), y: Math.max(0, y0), w: 0, h: 0 };
-  rect.w = Math.min(doc.cols, Math.max(a.x, b.x) + 1) - rect.x;
-  rect.h = Math.min(doc.rows, Math.max(a.y, b.y) + 1) - rect.y;
-  if (rect.w < 1 || rect.h < 1) throw new Error('merge rectangle is outside the grid');
-  if (doc.boxes.some((o) => o.x < rect.x + rect.w && rect.x < o.x + o.w && o.y < rect.y + rect.h && rect.y < o.y + o.h)) {
-    throw new Error('merge rectangle overlaps another box');
-  }
-  const first = [...keys].map((k) => doc.cells.get(k)).find((p) => p !== undefined);
-  const box: Box = { ...rect, id: nextBoxId(doc), fill: fill ?? first ?? { kind: 'solid', role: 'purple' } };
-  return { ...withCells(doc, (cells) => { for (const k of keys) cells.delete(k); }), boxes: [...doc.boxes, box] };
+// Turns the cells into one box. Boxes the cells overlap are absorbed, so merging boxes is the same
+// operation as drawing over them. The box keeps the first absorbed box's fill and text, otherwise
+// `fill`, otherwise the first painted cell.
+export function merge(doc: Doc, keys: Iterable<number>, fill?: FillPaint): Doc {
+  const want = new Set([...keys].filter((k) => k >= 0 && k < doc.cols * doc.rows));
+  if (!want.size) throw new Error('Select some cells to merge.');
+  const touched = doc.boxes.filter((b) => [...b.keys].some((k) => want.has(k)));
+  for (const b of touched) for (const k of b.keys) want.add(k);
+  if (components(doc.cols, want).length !== 1) throw new Error('Merge needs cells that touch each other.');
+  const lead = touched[0];
+  const text = touched.find((b) => b.text)?.text;
+  const painted = [...want].map((k) => solidOnly(doc.cells.get(k))).find((p) => p !== undefined);
+  const box: Box = {
+    id: lead?.id ?? nextBoxIds(doc, 1)[0]!,
+    keys: want,
+    fill: lead?.fill ?? fill ?? painted ?? { kind: 'solid', role: 'purple' },
+    ...(text ? { text } : {}),
+  };
+  const gone = new Set(touched.map((b) => b.id));
+  return {
+    ...withCells(doc, (cells) => { for (const k of want) cells.delete(k); }),
+    boxes: [...doc.boxes.filter((b) => !gone.has(b.id)), box],
+  };
 }
 
 export function split(doc: Doc, id: string): Doc {
   const box = doc.boxes.find((b) => b.id === id);
   if (!box) return doc;
   const cells = new Map(doc.cells);
-  for (let y = box.y; y < box.y + box.h; y++) for (let x = box.x; x < box.x + box.w; x++) cells.set(cellKey(doc, x, y), box.fill);
+  for (const k of box.keys) cells.set(k, box.fill);
   return { ...doc, cells, boxes: doc.boxes.filter((b) => b.id !== id) };
 }
 
@@ -103,10 +119,7 @@ export function updateBox(doc: Doc, id: string, patch: Partial<Pick<Box, 'fill' 
 }
 
 export function boxesInside(doc: Doc, sel: Selection): Box[] {
-  return doc.boxes.filter((b) => {
-    for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) if (!sel.has(cellKey(doc, x, y))) return false;
-    return true;
-  });
+  return doc.boxes.filter((b) => [...b.keys].every((k) => sel.has(k)));
 }
 
 export function moveSelection(doc: Doc, sel: Selection, dx: number, dy: number): { doc: Doc; selection: Set<number> } {
@@ -114,16 +127,13 @@ export function moveSelection(doc: Doc, sel: Selection, dx: number, dy: number):
   const movingIds = new Set(moving.map((b) => b.id));
   const shifted = (k: number) => {
     const { x, y } = cellXY(doc, k);
-    if (!inBounds(doc, x + dx, y + dy)) throw new Error('move would leave the grid');
+    if (!inBounds(doc, x + dx, y + dy)) throw new Error('That would move past the edge of the grid.');
     return cellKey(doc, x + dx, y + dy);
   };
   const selection = new Set([...sel].map(shifted));
   const staying = doc.boxes.filter((b) => !movingIds.has(b.id));
-  const landed = moving.map((b) => ({ ...b, x: b.x + dx, y: b.y + dy }));
-  for (const k of selection) {
-    const { x, y } = cellXY(doc, k);
-    if (staying.some((b) => boxCovers(b, x, y))) throw new Error('move would land on another box');
-  }
+  for (const k of selection) if (staying.some((b) => b.keys.has(k))) throw new Error('That would land on another box.');
+  const landed = moving.map((b) => ({ ...b, keys: new Set([...b.keys].map(shifted)) }));
   const cells = new Map(doc.cells);
   const carried = [...sel].filter((k) => cells.has(k)).map((k) => [shifted(k), cells.get(k)!] as const);
   for (const k of sel) cells.delete(k);
@@ -131,14 +141,41 @@ export function moveSelection(doc: Doc, sel: Selection, dx: number, dy: number):
   return { doc: { ...doc, cells, boxes: [...staying, ...landed] }, selection };
 }
 
-// New canvas and cell size. Cells keep their (x, y); anything outside the new grid is dropped.
+// New canvas and cell size. Cells and box cells keep their (x, y); anything outside the new grid is dropped.
 export function resize(doc: Doc, o: { canvas: { w: number; h: number }; cell: number }): Doc {
   const next = newDoc({ canvas: o.canvas, cell: o.cell, theme: doc.theme, mode: doc.mode });
-  const cells = new Map<number, Paint>();
-  for (const [k, p] of doc.cells) {
+  const rekey = (k: number): number | undefined => {
     const { x, y } = cellXY(doc, k);
-    if (inBounds(next, x, y)) cells.set(cellKey(next, x, y), p);
+    return inBounds(next, x, y) ? cellKey(next, x, y) : undefined;
+  };
+  const cells = new Map<number, Paint>();
+  for (const [k, p] of doc.cells) { const n = rekey(k); if (n !== undefined) cells.set(n, p); }
+  const cut = new Set<number>();
+  for (const id of doc.gridCut) {
+    const n = rekey(id >> 1);
+    if (n !== undefined) cut.add(n * 2 + (id & 1));
   }
-  const boxes = doc.boxes.filter((b) => b.x + b.w <= next.cols && b.y + b.h <= next.rows);
-  return { ...next, grid: doc.grid, cells, boxes, gradients: doc.gradients };
+  const boxes: Box[] = [];
+  for (const b of doc.boxes) {
+    const kept = [...b.keys].map(rekey).filter((k): k is number => k !== undefined);
+    components(next.cols, kept).sort((p, q) => q.length - p.length).forEach((part, i) => {
+      boxes.push({ ...b, id: i === 0 ? b.id : '', keys: new Set(part), ...(i === 0 ? {} : { text: undefined }) });
+    });
+  }
+  const spare = nextBoxIds({ ...next, boxes: boxes.filter((b) => b.id) }, boxes.filter((b) => !b.id).length);
+  let s = 0;
+  return {
+    ...next,
+    gridOpacity: doc.gridOpacity,
+    gridCut: cut,
+    cells,
+    boxes: boxes.map((b) => (b.id ? b : { ...b, id: spare[s++]! })),
+    gradients: doc.gradients,
+  };
+}
+
+export function setLines(doc: Doc, ids: Iterable<number>, hidden: boolean): Doc {
+  const gridCut = new Set(doc.gridCut);
+  for (const id of ids) hidden ? gridCut.add(id) : gridCut.delete(id);
+  return { ...doc, gridCut };
 }
