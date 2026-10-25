@@ -1,0 +1,20 @@
+{
+  "name": "sbg-figma-plugins",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": ["packages/*", "plugins/*"],
+  "scripts": {
+    "test": "node --test \"packages/core/test/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p plugins/pixel-render",
+    "build": "npm run build -w plugins/pixel-render",
+    "dev": "npm run dev -w plugins/pixel-render"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.100.0",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  }
+}
