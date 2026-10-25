@@ -6,7 +6,8 @@ async function build() {
   await esbuild.build({ entryPoints: ['src/main.ts'], bundle: true, outfile: 'dist/code.js', target: 'es2018', format: 'iife', logLevel: 'warning' });
   const js = (await esbuild.build({ entryPoints: ['src/ui.ts'], bundle: true, write: false, target: 'es2020', format: 'iife', logLevel: 'warning' })).outputFiles[0].text;
   const css = (await esbuild.build({ entryPoints: ['src/styles.css'], bundle: true, write: false, minify: true, loader: { '.woff2': 'dataurl' }, logLevel: 'warning' })).outputFiles[0].text;
-  const body = readFileSync('src/ui.html', 'utf8');
+  const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
+  const body = readFileSync('src/ui.html', 'utf8').replace('__VERSION__', version);
   writeFileSync(
     'dist/ui.html',
     `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pixel Render</title><style>${css}</style></head><body>${body}<script>${js.replace(/<\/script>/g, '<\\/script>')}</script></body></html>`,
