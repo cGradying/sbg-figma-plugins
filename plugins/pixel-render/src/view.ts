@@ -1,7 +1,7 @@
 import { edgeLine, gradientEnds } from '@sbg/core';
 import type { Doc, Fill, Scene } from '@sbg/core';
 
-export type Overlay = { selection: ReadonlySet<number>; hover?: number; edge?: number; preview?: ReadonlySet<number>; shift?: { dx: number; dy: number } };
+export type Overlay = { photo?: HTMLImageElement; selection: ReadonlySet<number>; hover?: number; edge?: number; preview?: ReadonlySet<number>; shift?: { dx: number; dy: number } };
 
 function fillStyle(ctx: CanvasRenderingContext2D, f: Fill): string | CanvasGradient {
   if (f.type === 'solid') return f.hex;
@@ -11,10 +11,10 @@ function fillStyle(ctx: CanvasRenderingContext2D, f: Fill): string | CanvasGradi
   return g;
 }
 
-function checker(ctx: CanvasRenderingContext2D, w: number, h: number) {
+function checker(ctx: CanvasRenderingContext2D, w: number, h: number, light = false) {
   const s = 24;
   for (let y = 0; y < h; y += s) for (let x = 0; x < w; x += s) {
-    ctx.fillStyle = (x / s + y / s) % 2 ? '#262033' : '#1b1626';
+    ctx.fillStyle = (x / s + y / s) % 2 ? (light ? '#4a4264' : '#262033') : (light ? '#38304f' : '#1b1626');
     ctx.fillRect(x, y, s, s);
   }
 }
@@ -43,6 +43,31 @@ export function draw(canvas: HTMLCanvasElement, scene: Scene, doc: Doc, ov: Over
     ctx.scale(1 / scale, 1 / scale);
     checker(ctx, cssW, cssH);
     ctx.restore();
+  }
+  if (doc.mode !== 'standalone') {
+    if (ov.photo) ctx.drawImage(ov.photo, 0, 0, scene.canvas.w, scene.canvas.h);
+    else if (scene.cut) {
+      const g = ctx.createLinearGradient(0, 0, scene.canvas.w, scene.canvas.h);
+      g.addColorStop(0, '#5b4a7a');
+      g.addColorStop(1, '#2a2040');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, scene.canvas.w, scene.canvas.h);
+    }
+  }
+  if (scene.cut?.hidden) {
+    const { at, d } = scene.cut.hidden;
+    const p = new Path2D();
+    p.addPath(new Path2D(d), new DOMMatrix().translate(at.x, at.y));
+    ctx.save();
+    ctx.clip(p);
+    ctx.scale(1 / scale, 1 / scale);
+    checker(ctx, cssW, cssH, true);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.lineWidth = 1.5 / scale;
+    ctx.setLineDash([6 / scale, 4 / scale]);
+    ctx.stroke(p);
+    ctx.setLineDash([]);
   }
   if (scene.grid) {
     ctx.globalAlpha = scene.grid.opacity;

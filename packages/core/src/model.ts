@@ -37,7 +37,9 @@ export type Doc = {
   boxes: readonly Box[];
   gradients: Readonly<Record<string, Gradient>>;
   theme: string;
-  mode: 'standalone' | 'overlay';
+  mode: 'standalone' | 'overlay' | 'photo';
+  // photo mode: cells are cut out of the photo (false), or are the only part of it that stays (true)
+  photoKeep: boolean;
 };
 
 export const DEFAULT_CELL = 54;
@@ -68,6 +70,7 @@ export function newDoc(o: {
     gradients: {},
     theme: o.theme,
     mode: o.mode ?? 'standalone',
+    photoKeep: false,
   };
 }
 

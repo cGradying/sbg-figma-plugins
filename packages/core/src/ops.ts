@@ -167,6 +167,7 @@ export function resize(doc: Doc, o: { canvas: { w: number; h: number }; cell: nu
   return {
     ...next,
     gridOpacity: doc.gridOpacity,
+    photoKeep: doc.photoKeep,
     gridCut: cut,
     cells,
     boxes: boxes.map((b) => (b.id ? b : { ...b, id: spare[s++]! })),

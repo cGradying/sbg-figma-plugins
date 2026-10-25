@@ -303,3 +303,29 @@ test('resize keeps cells by position and drops boxes that no longer fit', () => 
   assert.equal(out.cells.size, 10);
   assert.deepEqual(out.boxes.map((b) => b.keys.size), [2]);
 });
+
+test('photo mode: cells become holes and the visible shape is the grid minus them', () => {
+  const d = { ...fillRect(doc0(), { x: 5, y: 5 }, { x: 6, y: 6 }, purple), mode: 'photo' as const };
+  const s = buildScene(d, LIGHT);
+  assert.equal(s.items.length, 0);
+  assert.deepEqual([s.cut!.hidden!.at, s.cut!.hidden!.d], [{ x: 270, y: 270 }, 'M0 0L108 0L108 108L0 108Z']);
+  assert.equal(s.cut!.visible!.d.split('Z').length - 1, 2);
+});
+
+test('photo mode keep flips the shapes, and an empty drawing has nothing to cut', () => {
+  const d = { ...fillRect(doc0(), { x: 5, y: 5 }, { x: 6, y: 6 }, purple), mode: 'photo' as const, photoKeep: true };
+  const s = buildScene(d, LIGHT);
+  assert.equal(s.cut!.visible!.d, 'M0 0L108 0L108 108L0 108Z');
+  assert.equal(s.cut!.hidden!.d.split('Z').length - 1, 2);
+  const none = buildScene({ ...doc0(), mode: 'photo' }, LIGHT).cut!;
+  assert.deepEqual([none.hidden, none.visible === null], [null, false]);
+});
+
+test('boxes count as holes in photo mode and photoKeep survives serialize and resize', () => {
+  let d = merge(doc0(), rectKeys(doc0(), { x: 0, y: 0 }, { x: 2, y: 2 }), purple);
+  d = { ...d, mode: 'photo', photoKeep: true };
+  assert.equal(buildScene(d, LIGHT).cut!.visible!.d, 'M0 0L162 0L162 162L0 162Z');
+  assert.equal(parse(serialize(d)).photoKeep, true);
+  assert.equal(parse(serialize(d)).mode, 'photo');
+  assert.equal(resize(d, { canvas: { w: 540, h: 540 }, cell: 54 }).photoKeep, true);
+});

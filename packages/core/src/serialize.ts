@@ -7,7 +7,7 @@ type Wire = {
   v: number;
   cols: number; rows: number; cell: number;
   canvas: { w: number; h: number };
-  gridOpacity: number; gridCut: number[]; theme: string; mode: Doc['mode'];
+  gridOpacity: number; gridCut: number[]; photoKeep: boolean; theme: string; mode: Doc['mode'];
   paints: Paint[];
   runs: number[];
   boxes: { id: string; runs: number[]; fill: FillPaint; text?: BoxText }[];
@@ -55,7 +55,7 @@ export function serialize(doc: Doc): string {
   const wire: Wire = {
     v: VERSION,
     cols: doc.cols, rows: doc.rows, cell: doc.cell, canvas: doc.canvas,
-    gridOpacity: doc.gridOpacity, gridCut: [...doc.gridCut].sort((a, b) => a - b), theme: doc.theme, mode: doc.mode,
+    gridOpacity: doc.gridOpacity, gridCut: [...doc.gridCut].sort((a, b) => a - b), photoKeep: doc.photoKeep, theme: doc.theme, mode: doc.mode,
     paints, runs,
     boxes: doc.boxes.map((b) => ({ id: b.id, runs: toRuns(b.keys), fill: b.fill, ...(b.text ? { text: b.text } : {}) })),
     gradients: Object.values(doc.gradients).filter((g) => used.has(g.id)),
@@ -82,7 +82,7 @@ export function parse(json: string): Doc {
   return {
     cols: w.cols, rows: w.rows, cell: w.cell, canvas: w.canvas,
     gridOpacity: isNum(w.gridOpacity) ? w.gridOpacity : 0.7, gridCut: new Set(Array.isArray(w.gridCut) ? w.gridCut.filter(isNum) : []),
-    theme: w.theme, mode: w.mode,
+    photoKeep: w.photoKeep === true, theme: w.theme, mode: w.mode,
     cells,
     boxes: (w.boxes ?? []).map((b) => ({ id: b.id, keys: fromRuns(b.runs, total), fill: b.fill, ...(b.text ? { text: b.text } : {}) })),
     gradients: Object.fromEntries((w.gradients ?? []).map((g) => [g.id, g])),

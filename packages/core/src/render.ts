@@ -25,8 +25,12 @@ export type Item =
   | { kind: 'path'; name: string; at: { x: number; y: number }; d: string; fill: Fill }
   | BoxItem;
 
+export type CutShape = { at: { x: number; y: number }; d: string };
+
 export type Scene = {
   canvas: { w: number; h: number };
+  // Photo mode: the shape that stays visible and the shape that is cut away, as outline paths. Null when empty.
+  cut: { keep: boolean; visible: CutShape | null; hidden: CutShape | null } | null;
   background: string | null;
   grid: { d: string; hex: string; opacity: number } | null;
   items: Item[];
@@ -42,7 +46,26 @@ function pathItem(doc: Doc, name: string, keys: Iterable<number>, fill: Fill): I
   return { kind: 'path', name, at: { x: b.x * doc.cell, y: b.y * doc.cell }, d: outlinePath(doc, set, b), fill };
 }
 
+function photoScene(doc: Doc, theme: Theme): Scene {
+  const holes = new Set<number>([...doc.cells.keys(), ...doc.boxes.flatMap((b) => [...b.keys])]);
+  const rest: number[] = [];
+  for (let k = 0; k < doc.cols * doc.rows; k++) if (!holes.has(k)) rest.push(k);
+  const shape = (keys: number[]): CutShape | null => {
+    const b = keysBounds(doc, keys);
+    return b ? { at: { x: b.x * doc.cell, y: b.y * doc.cell }, d: outlinePath(doc, keys, b) } : null;
+  };
+  const d = gridPath(doc);
+  return {
+    canvas: doc.canvas,
+    cut: { keep: doc.photoKeep, visible: shape(doc.photoKeep ? [...holes] : rest), hidden: shape(doc.photoKeep ? rest : [...holes]) },
+    background: null,
+    grid: doc.gridOpacity > 0 && d ? { d, hex: resolve(theme, 'gridLine'), opacity: doc.gridOpacity } : null,
+    items: [],
+  };
+}
+
 export function buildScene(doc: Doc, theme: Theme, o: { flatten?: boolean } = {}): Scene {
+  if (doc.mode === 'photo') return photoScene(doc, theme);
   const items: Item[] = [];
   const groups = new Map<string, { paint: Paint; keys: number[] }>();
   for (const [k, p] of doc.cells) {
@@ -125,6 +148,7 @@ export function buildScene(doc: Doc, theme: Theme, o: { flatten?: boolean } = {}
   const d = gridPath(doc);
   return {
     canvas: doc.canvas,
+    cut: null,
     background: doc.mode === 'overlay' ? null : resolve(theme, 'bg'),
     grid: doc.gridOpacity > 0 && d ? { d, hex: resolve(theme, 'gridLine'), opacity: doc.gridOpacity } : null,
     items,

@@ -20,7 +20,7 @@
       <div class="cv-wrap">
         <canvas id="cv" aria-label="Pixel grid"></canvas>
         <div class="empty" id="empty">
-          <p>Pick a color, then drag on the grid.</p>
+          <p id="empty-text">Pick a color, then drag on the grid.</p>
           <button class="btn-sm" id="load-example">Load the Co-Lead example</button>
         </div>
       </div>
@@ -160,8 +160,9 @@
           <div><label for="cell">Cell px</label><input type="number" id="cell" min="8" max="400" step="1"></div>
         </div>
         <div class="f"><label>Mode</label>
-          <div class="seg full" id="mode"><button data-mode="standalone" class="on">Frame</button><button data-mode="overlay">Overlay on a layer</button></div>
-          <small class="note" id="mode-note">Frame makes its own frame. Overlay sizes the grid to the layer you select in Figma, lays a transparent frame on top, and turns the grid lines off.</small></div>
+          <div class="seg full" id="mode"><button data-mode="standalone" class="on" title="Draw on a blank canvas and render it as its own frame">Frame</button><button data-mode="overlay" title="Lay the drawing over a layer">Overlay</button><button data-mode="photo" title="Cut the drawing out of a photo">Cut photo</button></div>
+          <small class="note" id="mode-note"></small>
+          <div class="seg full" id="photo-opts" hidden style="margin-top:8px"><button data-keep="false" class="on" title="The cells you draw are removed from the photo">Punch holes</button><button data-keep="true" title="Only the cells you draw stay, the rest is removed">Keep only the pixels</button></div></div>
         <div class="f"><label for="grid-op">Grid line opacity <b class="num" id="grid-op-v"></b></label>
           <input type="range" id="grid-op" min="0" max="100" value="70" aria-label="Grid line opacity">
           <div class="row" style="margin-top:6px"><button class="btn-sm" id="lines-restore">Restore hidden lines</button><span class="note" id="lines-count"></span></div>

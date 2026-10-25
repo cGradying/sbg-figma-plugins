@@ -21,7 +21,7 @@
       <div class="cv-wrap">
         <canvas id="cv" aria-label="Pixel grid"></canvas>
         <div class="empty" id="empty">
-          <p>Pick a color, then drag on the grid.</p>
+          <p id="empty-text">Pick a color, then drag on the grid.</p>
           <button class="btn-sm" id="load-example">Load the Co-Lead example</button>
         </div>
       </div>
@@ -161,8 +161,9 @@
           <div><label for="cell">Cell px</label><input type="number" id="cell" min="8" max="400" step="1"></div>
         </div>
         <div class="f"><label>Mode</label>
-          <div class="seg full" id="mode"><button data-mode="standalone" class="on">Frame</button><button data-mode="overlay">Overlay on a layer</button></div>
-          <small class="note" id="mode-note">Frame makes its own frame. Overlay sizes the grid to the layer you select in Figma, lays a transparent frame on top, and turns the grid lines off.</small></div>
+          <div class="seg full" id="mode"><button data-mode="standalone" class="on" title="Draw on a blank canvas and render it as its own frame">Frame</button><button data-mode="overlay" title="Lay the drawing over a layer">Overlay</button><button data-mode="photo" title="Cut the drawing out of a photo">Cut photo</button></div>
+          <small class="note" id="mode-note"></small>
+          <div class="seg full" id="photo-opts" hidden style="margin-top:8px"><button data-keep="false" class="on" title="The cells you draw are removed from the photo">Punch holes</button><button data-keep="true" title="Only the cells you draw stay, the rest is removed">Keep only the pixels</button></div></div>
         <div class="f"><label for="grid-op">Grid line opacity <b class="num" id="grid-op-v"></b></label>
           <input type="range" id="grid-op" min="0" max="100" value="70" aria-label="Grid line opacity">
           <div class="row" style="margin-top:6px"><button class="btn-sm" id="lines-restore">Restore hidden lines</button><span class="note" id="lines-count"></span></div>
@@ -212,7 +213,8 @@
       boxes: [],
       gradients: {},
       theme: o.theme,
-      mode: o.mode ?? "standalone"
+      mode: o.mode ?? "standalone",
+      photoKeep: false
     };
   }
   var paintKey = (p) => p.kind === "solid" ? `s:${p.role}:${p.opacity ?? 1}` : p.kind === "outline" ? `o:${p.role}:${p.weight ?? 3}:${p.opacity ?? 1}` : `g:${p.id}`;
@@ -519,6 +521,7 @@
     return {
       ...next,
       gridOpacity: doc2.gridOpacity,
+      photoKeep: doc2.photoKeep,
       gridCut: cut,
       cells,
       boxes: boxes.map((b) => b.id ? b : { ...b, id: spare[s++] }),
@@ -812,6 +815,7 @@
       canvas: doc2.canvas,
       gridOpacity: doc2.gridOpacity,
       gridCut: [...doc2.gridCut].sort((a, b) => a - b),
+      photoKeep: doc2.photoKeep,
       theme: doc2.theme,
       mode: doc2.mode,
       paints,
@@ -843,6 +847,7 @@
       canvas: w.canvas,
       gridOpacity: isNum(w.gridOpacity) ? w.gridOpacity : 0.7,
       gridCut: new Set(Array.isArray(w.gridCut) ? w.gridCut.filter(isNum) : []),
+      photoKeep: w.photoKeep === true,
       theme: w.theme,
       mode: w.mode,
       cells,
@@ -859,7 +864,25 @@
     const b = keysBounds(doc2, set);
     return { kind: "path", name, at: { x: b.x * doc2.cell, y: b.y * doc2.cell }, d: outlinePath(doc2, set, b), fill };
   }
+  function photoScene(doc2, theme2) {
+    const holes = /* @__PURE__ */ new Set([...doc2.cells.keys(), ...doc2.boxes.flatMap((b) => [...b.keys])]);
+    const rest = [];
+    for (let k = 0; k < doc2.cols * doc2.rows; k++) if (!holes.has(k)) rest.push(k);
+    const shape = (keys) => {
+      const b = keysBounds(doc2, keys);
+      return b ? { at: { x: b.x * doc2.cell, y: b.y * doc2.cell }, d: outlinePath(doc2, keys, b) } : null;
+    };
+    const d = gridPath(doc2);
+    return {
+      canvas: doc2.canvas,
+      cut: { keep: doc2.photoKeep, visible: shape(doc2.photoKeep ? [...holes] : rest), hidden: shape(doc2.photoKeep ? rest : [...holes]) },
+      background: null,
+      grid: doc2.gridOpacity > 0 && d ? { d, hex: resolve(theme2, "gridLine"), opacity: doc2.gridOpacity } : null,
+      items: []
+    };
+  }
   function buildScene(doc2, theme2, o = {}) {
+    if (doc2.mode === "photo") return photoScene(doc2, theme2);
     const items = [];
     const groups = /* @__PURE__ */ new Map();
     for (const [k, p] of doc2.cells) {
@@ -938,6 +961,7 @@
     const d = gridPath(doc2);
     return {
       canvas: doc2.canvas,
+      cut: null,
       background: doc2.mode === "overlay" ? null : resolve(theme2, "bg"),
       grid: doc2.gridOpacity > 0 && d ? { d, hex: resolve(theme2, "gridLine"), opacity: doc2.gridOpacity } : null,
       items
@@ -1040,10 +1064,10 @@
     for (const st2 of f.stops) g.addColorStop(st2.at, st2.hex);
     return g;
   }
-  function checker(ctx, w, h) {
+  function checker(ctx, w, h, light = false) {
     const s = 24;
     for (let y = 0; y < h; y += s) for (let x = 0; x < w; x += s) {
-      ctx.fillStyle = (x / s + y / s) % 2 ? "#262033" : "#1b1626";
+      ctx.fillStyle = (x / s + y / s) % 2 ? light ? "#4a4264" : "#262033" : light ? "#38304f" : "#1b1626";
       ctx.fillRect(x, y, s, s);
     }
   }
@@ -1071,6 +1095,31 @@
       ctx.scale(1 / scale, 1 / scale);
       checker(ctx, cssW, cssH);
       ctx.restore();
+    }
+    if (doc2.mode !== "standalone") {
+      if (ov.photo) ctx.drawImage(ov.photo, 0, 0, scene.canvas.w, scene.canvas.h);
+      else if (scene.cut) {
+        const g = ctx.createLinearGradient(0, 0, scene.canvas.w, scene.canvas.h);
+        g.addColorStop(0, "#5b4a7a");
+        g.addColorStop(1, "#2a2040");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, scene.canvas.w, scene.canvas.h);
+      }
+    }
+    if (scene.cut?.hidden) {
+      const { at, d } = scene.cut.hidden;
+      const p = new Path2D();
+      p.addPath(new Path2D(d), new DOMMatrix().translate(at.x, at.y));
+      ctx.save();
+      ctx.clip(p);
+      ctx.scale(1 / scale, 1 / scale);
+      checker(ctx, cssW, cssH, true);
+      ctx.restore();
+      ctx.strokeStyle = "rgba(255,255,255,.55)";
+      ctx.lineWidth = 1.5 / scale;
+      ctx.setLineDash([6 / scale, 4 / scale]);
+      ctx.stroke(p);
+      ctx.setLineDash([]);
     }
     if (scene.grid) {
       ctx.globalAlpha = scene.grid.opacity;
@@ -1215,6 +1264,7 @@
     gmode: "stepped",
     align: "center",
     scatterRoles: /* @__PURE__ */ new Set(["purple", "pink"]),
+    photo: void 0,
     hover: void 0,
     edge: void 0,
     working: void 0,
@@ -1230,6 +1280,11 @@
     el.textContent = msg;
     el.className = `status ${kind}`;
   }
+  var MODE_NOTES = {
+    standalone: "Draw on a blank canvas and render it as its own frame.",
+    overlay: "Sizes the grid to the layer you select in Figma and lays a transparent frame on top of it. Grid lines start off.",
+    photo: "Select a photo in Figma, or draw first on the empty canvas. The cells you draw are cut out of a copy of the photo."
+  };
   var HINTS = {
     brush: "<b>Brush.</b> Click or drag to paint cells.",
     box: "<b>Box.</b> Drag a rectangle to add a box. Drag over a box to grow it.",
@@ -1244,6 +1299,7 @@
     const d = doc();
     const scene = buildScene(d, theme());
     draw($("cv"), scene, d, {
+      ...st.photo ? { photo: st.photo.img } : {},
       selection: st.sel,
       ...st.hover === void 0 ? {} : { hover: st.hover },
       ...st.edge === void 0 ? {} : { edge: st.edge },
@@ -1253,8 +1309,14 @@
     $("tag-canvas").textContent = `${d.canvas.w}\xD7${d.canvas.h}`;
     $("tag-theme").textContent = theme().name;
     $("tag-sel").textContent = st.sel.size ? `${st.sel.size} cells` : "none";
-    $("hint").innerHTML = HINTS[st.tool];
+    const photoMode = d.mode === "photo";
+    $("hint").innerHTML = HINTS[st.tool] + (photoMode ? "<br>Cells you draw are cut out of the photo." : "");
     $("empty").hidden = d.cells.size > 0 || d.boxes.length > 0;
+    $("empty-text").textContent = photoMode ? st.photo ? "Drag on the grid to mark cells to cut out." : "Draw the cells to cut out. Select a photo in Figma to see it here." : "Pick a color, then drag on the grid.";
+    document.querySelector(".paintbar").hidden = photoMode;
+    $("photo-opts").hidden = !photoMode;
+    for (const b of $("photo-opts").children) b.classList.toggle("on", b.dataset.keep === "true" === d.photoKeep);
+    $("mode-note").textContent = MODE_NOTES[d.mode];
     const whole = boxesInside(st.hist.present, st.sel);
     $("selbar").hidden = st.sel.size === 0;
     $("sel-count").textContent = `${st.sel.size} cell${st.sel.size === 1 ? "" : "s"}`;
@@ -1431,17 +1493,18 @@
   $("grid-op").onchange = () => {
     if (st.working) apply(st.working);
   };
+  for (const b of $("photo-opts").children) b.onclick = () => apply({ ...st.hist.present, photoKeep: b.dataset.keep === "true" });
   $("lines-restore").onclick = () => apply({ ...st.hist.present, gridCut: /* @__PURE__ */ new Set() });
   for (const b of $("mode").children) b.onclick = () => {
     const mode = b.dataset.mode;
     const d = st.hist.present;
-    apply({ ...d, mode, gridOpacity: mode === "overlay" ? 0 : d.gridOpacity || 0.7 });
+    apply({ ...d, mode, gridOpacity: mode === "overlay" ? 0 : d.gridOpacity || (mode === "photo" ? 0.4 : 0.7) });
     syncCanvasInputs();
     matchTarget();
   };
   function matchTarget() {
     const d = st.hist.present;
-    if (d.mode === "overlay" && st.fsel.kind === "target" && (st.fsel.target.w !== d.canvas.w || st.fsel.target.h !== d.canvas.h)) setCanvas(st.fsel.target.w, st.fsel.target.h);
+    if (d.mode !== "standalone" && st.fsel.kind === "target" && (st.fsel.target.w !== d.canvas.w || st.fsel.target.h !== d.canvas.h)) setCanvas(st.fsel.target.w, st.fsel.target.h);
   }
   for (const b of $("tools").children) b.onclick = () => setTool(b.dataset.tool);
   function setTool(t) {
@@ -1681,16 +1744,25 @@
   function syncDock() {
     const d = st.hist.present;
     const k = st.fsel.kind;
-    const overlay = d.mode === "overlay";
-    $("render-new").textContent = overlay ? k === "target" ? "Render over selection" : "Select a layer to overlay" : "Render to Figma";
-    $("render-new").disabled = overlay && k !== "target";
+    const photo = d.mode === "photo";
+    const needsLayer = d.mode !== "standalone";
+    const empty = d.cells.size === 0 && d.boxes.length === 0;
+    $("render-new").textContent = photo ? k === "target" ? "Cut the photo" : "Select a photo to cut" : d.mode === "overlay" ? k === "target" ? "Render over selection" : "Select a layer to overlay" : "Render to Figma";
+    $("render-new").disabled = needsLayer && k !== "target";
+    $("render-new").title = photo && empty ? "Draw some cells first" : "";
     $("render-update").disabled = k !== "pixel";
     $("render-load").disabled = k !== "pixel";
-    $("render-flat").disabled = k !== "pixel";
+    $("render-flat").disabled = k !== "pixel" || photo;
   }
   $("render-new").onclick = () => {
     const d = st.hist.present;
     const t = target();
+    if (d.mode === "photo") {
+      if (!t) return;
+      if (d.cells.size === 0 && d.boxes.length === 0) return status("Draw some cells first. Nothing is cut out of the photo yet.", "err");
+      status("Cutting\u2026");
+      return post({ type: "cut", doc: serialize(d), theme: theTheme(), targetId: t.id });
+    }
     status("Rendering\u2026");
     post({ type: "render", doc: serialize(d), theme: theTheme(), mode: d.mode === "overlay" ? "overlay" : "new", ...d.mode === "overlay" && t ? { targetId: t.id } : {} });
   };
@@ -1735,6 +1807,20 @@
       st.fsel = m.info;
       matchTarget();
       redraw();
+    } else if (m.type === "preview") {
+      if (!m.png) {
+        st.photo = void 0;
+        redraw();
+        return;
+      }
+      const url = URL.createObjectURL(new Blob([new Uint8Array(m.png)], { type: "image/png" }));
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        st.photo = { id: m.id, img };
+        redraw();
+      };
+      img.src = url;
     } else if (m.type === "done") status(m.message, "ok");
     else status(m.message, "err");
   }

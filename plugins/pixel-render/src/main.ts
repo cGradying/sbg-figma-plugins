@@ -1,5 +1,5 @@
 import { buildScene, figmaGradientTransform, fromChunks, parse, parseTheme, serialize, toChunks } from '@sbg/core';
-import type { Doc, Fill, Item, Scene, Theme } from '@sbg/core';
+import type { CutShape, Doc, Fill, Item, Scene, Theme } from '@sbg/core';
 import type { SelectionInfo, ToMain, ToUI } from './messages.ts';
 
 const DATA = 'pixel-render';
@@ -187,6 +187,12 @@ async function onRender(m: Extract<ToMain, { type: 'render' }>) {
     const n = await nodeById(m.targetId);
     if (n.type !== 'FRAME' || !loadPluginData(n)) throw new Error('Select a Pixel Render frame to update.');
     frame = n;
+    if (doc.mode === 'photo') {
+      applyMask(frame, doc, scene.cut, frame.width, frame.height);
+      savePluginData(frame, doc);
+      reveal(frame);
+      return send({ type: 'done', message: `Updated the cut in ${frame.name}` });
+    }
   } else {
     frame = figma.createFrame();
     frame.name = 'Pixel Render';
@@ -205,6 +211,51 @@ async function onRender(m: Extract<ToMain, { type: 'render' }>) {
   await draw(frame, doc, scene);
   reveal(frame);
   send({ type: 'done', message: `${m.mode === 'update' ? 'Updated' : 'Rendered'} ${frame.name}` });
+}
+
+type Cut = NonNullable<Scene['cut']>;
+
+// The mask is the last child, so it sits above the photo copy and clips it.
+function applyMask(frame: FrameNode, doc: Doc, cut: Cut | null, w: number, h: number) {
+  const visible: CutShape | null | undefined = cut?.visible;
+  if (!cut || !visible || !cut.hidden) throw new Error('Draw some cells first. Nothing is cut out of the photo yet.');
+  frame.findChild((n) => n.name === 'Pixel Cut mask')?.remove();
+  const sx = w / doc.canvas.w;
+  const sy = h / doc.canvas.h;
+  const mask = vector('Pixel Cut mask', visible.d, { x: 0, y: 0 });
+  mask.fills = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 } }];
+  if (sx !== 1 || sy !== 1) mask.resize(mask.width * sx, mask.height * sy);
+  mask.x = visible.at.x * sx;
+  mask.y = visible.at.y * sy;
+  frame.appendChild(mask);
+  mask.isMask = true;
+  mask.constraints = SCALE;
+}
+
+async function onCut(m: Extract<ToMain, { type: 'cut' }>) {
+  const src = await nodeById(m.targetId);
+  const doc = parse(m.doc);
+  const scene = buildScene(doc, parseTheme(m.theme));
+  if (!scene.cut?.visible || !scene.cut.hidden) throw new Error('Draw some cells first. Nothing is cut out of the photo yet.');
+  if (!src.parent || src.parent.type === 'DOCUMENT') throw new Error('Cannot cut a top-level page.');
+  const frame = figma.createFrame();
+  frame.name = 'Pixel Cut';
+  (src.parent as ChildrenMixin).appendChild(frame);
+  frame.resize(src.width, src.height);
+  frame.x = src.x + src.width + 40;
+  frame.y = src.y;
+  frame.fills = [];
+  frame.clipsContent = true;
+  const copy = src.clone();
+  frame.appendChild(copy);
+  copy.x = 0;
+  copy.y = 0;
+  if ('constraints' in copy) copy.constraints = SCALE;
+  applyMask(frame, doc, scene.cut, src.width, src.height);
+  frame.exportSettings = [{ format: 'PNG', suffix: '@2x', constraint: { type: 'SCALE', value: 2 }, contentsOnly: true }];
+  savePluginData(frame, doc);
+  reveal(frame);
+  send({ type: 'done', message: 'Cut a copy of the photo next to the original' });
 }
 
 async function onFlatten(m: Extract<ToMain, { type: 'flatten' }>) {
@@ -235,14 +286,35 @@ figma.ui.onmessage = (m: ToMain) =>
         const draft = (await figma.clientStorage.getAsync('draft')) as string | undefined;
         send({ type: 'init', themes, fonts, ...(typeof draft === 'string' ? { draft } : {}) });
         send({ type: 'selection', info: selectionInfo() });
+        schedulePreview();
         return;
       }
       case 'render': return onRender(m);
       case 'flatten': return onFlatten(m);
+      case 'cut': return onCut(m);
       case 'save-themes': return figma.clientStorage.setAsync('themes', m.themes);
       case 'save-draft': return figma.clientStorage.setAsync('draft', m.doc);
       case 'notify': figma.notify(m.message); return;
     }
   });
 
-figma.on('selectionchange', () => send({ type: 'selection', info: selectionInfo() }));
+let previewTimer: ReturnType<typeof setTimeout> | undefined;
+let previewToken = 0;
+
+// A small PNG of the selected layer, so the panel can show the photo under the grid.
+function schedulePreview() {
+  clearTimeout(previewTimer);
+  const token = ++previewToken;
+  const [n, extra] = figma.currentPage.selection;
+  if (!n || extra || loadPluginData(n) || n.width < 1) return send({ type: 'preview', id: '', png: null });
+  previewTimer = setTimeout(() => {
+    n.exportAsync({ format: 'PNG', constraint: { type: 'WIDTH', value: Math.min(640, Math.round(n.width)) } })
+      .then((png) => { if (token === previewToken) send({ type: 'preview', id: n.id, png }); })
+      .catch(() => { if (token === previewToken) send({ type: 'preview', id: n.id, png: null }); });
+  }, 250);
+}
+
+figma.on('selectionchange', () => {
+  send({ type: 'selection', info: selectionInfo() });
+  schedulePreview();
+});

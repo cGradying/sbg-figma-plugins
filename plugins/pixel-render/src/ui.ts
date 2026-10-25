@@ -29,6 +29,7 @@ const st = {
   gmode: 'stepped' as 'stepped' | 'smooth',
   align: 'center' as 'left' | 'center',
   scatterRoles: new Set<string>(['purple', 'pink']),
+  photo: undefined as { id: string; img: HTMLImageElement } | undefined,
   hover: undefined as number | undefined,
   edge: undefined as number | undefined,
   working: undefined as Doc | undefined,
@@ -47,6 +48,12 @@ function status(msg: string, kind: '' | 'ok' | 'err' = '') {
   el.className = `status ${kind}`;
 }
 
+const MODE_NOTES: Record<Doc['mode'], string> = {
+  standalone: 'Draw on a blank canvas and render it as its own frame.',
+  overlay: 'Sizes the grid to the layer you select in Figma and lays a transparent frame on top of it. Grid lines start off.',
+  photo: 'Select a photo in Figma, or draw first on the empty canvas. The cells you draw are cut out of a copy of the photo.',
+};
+
 const HINTS: Record<Tool, string> = {
   brush: '<b>Brush.</b> Click or drag to paint cells.',
   box: '<b>Box.</b> Drag a rectangle to add a box. Drag over a box to grow it.',
@@ -62,6 +69,7 @@ function redraw() {
   const d = doc();
   const scene = buildScene(d, theme());
   draw($<HTMLCanvasElement>('cv'), scene, d, {
+    ...(st.photo ? { photo: st.photo.img } : {}),
     selection: st.sel,
     ...(st.hover === undefined ? {} : { hover: st.hover }),
     ...(st.edge === undefined ? {} : { edge: st.edge }),
@@ -71,8 +79,16 @@ function redraw() {
   $('tag-canvas').textContent = `${d.canvas.w}×${d.canvas.h}`;
   $('tag-theme').textContent = theme().name;
   $('tag-sel').textContent = st.sel.size ? `${st.sel.size} cells` : 'none';
-  $('hint').innerHTML = HINTS[st.tool];
+  const photoMode = d.mode === 'photo';
+  $('hint').innerHTML = HINTS[st.tool] + (photoMode ? '<br>Cells you draw are cut out of the photo.' : '');
   $('empty').hidden = d.cells.size > 0 || d.boxes.length > 0;
+  $('empty-text').textContent = photoMode
+    ? (st.photo ? 'Drag on the grid to mark cells to cut out.' : 'Draw the cells to cut out. Select a photo in Figma to see it here.')
+    : 'Pick a color, then drag on the grid.';
+  document.querySelector<HTMLElement>('.paintbar')!.hidden = photoMode;
+  $('photo-opts').hidden = !photoMode;
+  for (const b of $('photo-opts').children) b.classList.toggle('on', ((b as HTMLElement).dataset.keep === 'true') === d.photoKeep);
+  $('mode-note').textContent = MODE_NOTES[d.mode];
   const whole = boxesInside(st.hist.present, st.sel);
   $('selbar').hidden = st.sel.size === 0;
   $('sel-count').textContent = `${st.sel.size} cell${st.sel.size === 1 ? '' : 's'}`;
@@ -243,18 +259,19 @@ for (const b of $('canvas-preset').children) (b as HTMLElement).onclick = () => 
 for (const id of ['cw', 'ch', 'cell']) $(id).onchange = () => setCanvas(Number($<HTMLInputElement>('cw').value), Number($<HTMLInputElement>('ch').value), Number($<HTMLInputElement>('cell').value));
 $('grid-op').oninput = (e) => { st.working = { ...st.hist.present, gridOpacity: Number((e.target as HTMLInputElement).value) / 100 }; redraw(); };
 $('grid-op').onchange = () => { if (st.working) apply(st.working); };
+for (const b of $('photo-opts').children) (b as HTMLElement).onclick = () => apply({ ...st.hist.present, photoKeep: (b as HTMLElement).dataset.keep === 'true' });
 $('lines-restore').onclick = () => apply({ ...st.hist.present, gridCut: new Set() });
 for (const b of $('mode').children) (b as HTMLElement).onclick = () => {
   const mode = (b as HTMLElement).dataset.mode as Doc['mode'];
   const d = st.hist.present;
-  apply({ ...d, mode, gridOpacity: mode === 'overlay' ? 0 : d.gridOpacity || 0.7 });
+  apply({ ...d, mode, gridOpacity: mode === 'overlay' ? 0 : d.gridOpacity || (mode === 'photo' ? 0.4 : 0.7) });
   syncCanvasInputs();
   matchTarget();
 };
 
 function matchTarget() {
   const d = st.hist.present;
-  if (d.mode === 'overlay' && st.fsel.kind === 'target' && (st.fsel.target.w !== d.canvas.w || st.fsel.target.h !== d.canvas.h)) setCanvas(st.fsel.target.w, st.fsel.target.h);
+  if (d.mode !== 'standalone' && st.fsel.kind === 'target' && (st.fsel.target.w !== d.canvas.w || st.fsel.target.h !== d.canvas.h)) setCanvas(st.fsel.target.w, st.fsel.target.h);
 }
 
 /* ---------- tools ---------- */
@@ -489,17 +506,28 @@ const target = () => (st.fsel.kind === 'none' ? undefined : st.fsel.target);
 function syncDock() {
   const d = st.hist.present;
   const k = st.fsel.kind;
-  const overlay = d.mode === 'overlay';
-  $('render-new').textContent = overlay ? (k === 'target' ? 'Render over selection' : 'Select a layer to overlay') : 'Render to Figma';
-  ($('render-new') as HTMLButtonElement).disabled = overlay && k !== 'target';
+  const photo = d.mode === 'photo';
+  const needsLayer = d.mode !== 'standalone';
+  const empty = d.cells.size === 0 && d.boxes.length === 0;
+  $('render-new').textContent = photo
+    ? (k === 'target' ? 'Cut the photo' : 'Select a photo to cut')
+    : d.mode === 'overlay' ? (k === 'target' ? 'Render over selection' : 'Select a layer to overlay') : 'Render to Figma';
+  ($('render-new') as HTMLButtonElement).disabled = needsLayer && k !== 'target';
+  ($('render-new') as HTMLButtonElement).title = photo && empty ? 'Draw some cells first' : '';
   ($('render-update') as HTMLButtonElement).disabled = k !== 'pixel';
   ($('render-load') as HTMLButtonElement).disabled = k !== 'pixel';
-  ($('render-flat') as HTMLButtonElement).disabled = k !== 'pixel';
+  ($('render-flat') as HTMLButtonElement).disabled = k !== 'pixel' || photo;
 }
 
 $('render-new').onclick = () => {
   const d = st.hist.present;
   const t = target();
+  if (d.mode === 'photo') {
+    if (!t) return;
+    if (d.cells.size === 0 && d.boxes.length === 0) return status('Draw some cells first. Nothing is cut out of the photo yet.', 'err');
+    status('Cutting…');
+    return post({ type: 'cut', doc: serialize(d), theme: theTheme(), targetId: t.id });
+  }
   status('Rendering…');
   post({ type: 'render', doc: serialize(d), theme: theTheme(), mode: d.mode === 'overlay' ? 'overlay' : 'new', ...(d.mode === 'overlay' && t ? { targetId: t.id } : {}) });
 };
@@ -540,6 +568,12 @@ function onMessage(m: ToUI) {
     st.fsel = m.info;
     matchTarget();
     redraw();
+  } else if (m.type === 'preview') {
+    if (!m.png) { st.photo = undefined; redraw(); return; }
+    const url = URL.createObjectURL(new Blob([new Uint8Array(m.png)], { type: 'image/png' }));
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); st.photo = { id: m.id, img }; redraw(); };
+    img.src = url;
   } else if (m.type === 'done') status(m.message, 'ok');
   else status(m.message, 'err');
 }

@@ -295,6 +295,7 @@
       canvas: doc.canvas,
       gridOpacity: doc.gridOpacity,
       gridCut: [...doc.gridCut].sort((a, b) => a - b),
+      photoKeep: doc.photoKeep,
       theme: doc.theme,
       mode: doc.mode,
       paints,
@@ -327,6 +328,7 @@
       canvas: w.canvas,
       gridOpacity: isNum(w.gridOpacity) ? w.gridOpacity : 0.7,
       gridCut: new Set(Array.isArray(w.gridCut) ? w.gridCut.filter(isNum) : []),
+      photoKeep: w.photoKeep === true,
       theme: w.theme,
       mode: w.mode,
       cells,
@@ -346,8 +348,26 @@
     const b = keysBounds(doc, set);
     return { kind: "path", name, at: { x: b.x * doc.cell, y: b.y * doc.cell }, d: outlinePath(doc, set, b), fill };
   }
+  function photoScene(doc, theme) {
+    const holes = /* @__PURE__ */ new Set([...doc.cells.keys(), ...doc.boxes.flatMap((b) => [...b.keys])]);
+    const rest = [];
+    for (let k = 0; k < doc.cols * doc.rows; k++) if (!holes.has(k)) rest.push(k);
+    const shape = (keys) => {
+      const b = keysBounds(doc, keys);
+      return b ? { at: { x: b.x * doc.cell, y: b.y * doc.cell }, d: outlinePath(doc, keys, b) } : null;
+    };
+    const d = gridPath(doc);
+    return {
+      canvas: doc.canvas,
+      cut: { keep: doc.photoKeep, visible: shape(doc.photoKeep ? [...holes] : rest), hidden: shape(doc.photoKeep ? rest : [...holes]) },
+      background: null,
+      grid: doc.gridOpacity > 0 && d ? { d, hex: resolve(theme, "gridLine"), opacity: doc.gridOpacity } : null,
+      items: []
+    };
+  }
   function buildScene(doc, theme, o = {}) {
     var _a, _b, _c, _d, _e;
+    if (doc.mode === "photo") return photoScene(doc, theme);
     const items = [];
     const groups = /* @__PURE__ */ new Map();
     for (const [k, p] of doc.cells) {
@@ -427,6 +447,7 @@
     const d = gridPath(doc);
     return {
       canvas: doc.canvas,
+      cut: null,
       background: doc.mode === "overlay" ? null : resolve(theme, "bg"),
       grid: doc.gridOpacity > 0 && d ? { d, hex: resolve(theme, "gridLine"), opacity: doc.gridOpacity } : null,
       items
@@ -626,6 +647,12 @@
       const n = await nodeById(m.targetId);
       if (n.type !== "FRAME" || !loadPluginData(n)) throw new Error("Select a Pixel Render frame to update.");
       frame = n;
+      if (doc.mode === "photo") {
+        applyMask(frame, doc, scene.cut, frame.width, frame.height);
+        savePluginData(frame, doc);
+        reveal(frame);
+        return send({ type: "done", message: `Updated the cut in ${frame.name}` });
+      }
     } else {
       frame = figma.createFrame();
       frame.name = "Pixel Render";
@@ -644,6 +671,48 @@
     await draw(frame, doc, scene);
     reveal(frame);
     send({ type: "done", message: `${m.mode === "update" ? "Updated" : "Rendered"} ${frame.name}` });
+  }
+  function applyMask(frame, doc, cut, w, h) {
+    var _a;
+    const visible = cut == null ? void 0 : cut.visible;
+    if (!cut || !visible || !cut.hidden) throw new Error("Draw some cells first. Nothing is cut out of the photo yet.");
+    (_a = frame.findChild((n) => n.name === "Pixel Cut mask")) == null ? void 0 : _a.remove();
+    const sx = w / doc.canvas.w;
+    const sy = h / doc.canvas.h;
+    const mask = vector("Pixel Cut mask", visible.d, { x: 0, y: 0 });
+    mask.fills = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }];
+    if (sx !== 1 || sy !== 1) mask.resize(mask.width * sx, mask.height * sy);
+    mask.x = visible.at.x * sx;
+    mask.y = visible.at.y * sy;
+    frame.appendChild(mask);
+    mask.isMask = true;
+    mask.constraints = SCALE;
+  }
+  async function onCut(m) {
+    var _a;
+    const src = await nodeById(m.targetId);
+    const doc = parse(m.doc);
+    const scene = buildScene(doc, parseTheme(m.theme));
+    if (!((_a = scene.cut) == null ? void 0 : _a.visible) || !scene.cut.hidden) throw new Error("Draw some cells first. Nothing is cut out of the photo yet.");
+    if (!src.parent || src.parent.type === "DOCUMENT") throw new Error("Cannot cut a top-level page.");
+    const frame = figma.createFrame();
+    frame.name = "Pixel Cut";
+    src.parent.appendChild(frame);
+    frame.resize(src.width, src.height);
+    frame.x = src.x + src.width + 40;
+    frame.y = src.y;
+    frame.fills = [];
+    frame.clipsContent = true;
+    const copy = src.clone();
+    frame.appendChild(copy);
+    copy.x = 0;
+    copy.y = 0;
+    if ("constraints" in copy) copy.constraints = SCALE;
+    applyMask(frame, doc, scene.cut, src.width, src.height);
+    frame.exportSettings = [{ format: "PNG", suffix: "@2x", constraint: { type: "SCALE", value: 2 }, contentsOnly: true }];
+    savePluginData(frame, doc);
+    reveal(frame);
+    send({ type: "done", message: "Cut a copy of the photo next to the original" });
   }
   async function onFlatten(m) {
     const src = await nodeById(m.targetId);
@@ -673,12 +742,15 @@
         const draft = await figma.clientStorage.getAsync("draft");
         send({ type: "init", themes, fonts, ...typeof draft === "string" ? { draft } : {} });
         send({ type: "selection", info: selectionInfo() });
+        schedulePreview();
         return;
       }
       case "render":
         return onRender(m);
       case "flatten":
         return onFlatten(m);
+      case "cut":
+        return onCut(m);
       case "save-themes":
         return figma.clientStorage.setAsync("themes", m.themes);
       case "save-draft":
@@ -688,5 +760,23 @@
         return;
     }
   });
-  figma.on("selectionchange", () => send({ type: "selection", info: selectionInfo() }));
+  var previewTimer;
+  var previewToken = 0;
+  function schedulePreview() {
+    clearTimeout(previewTimer);
+    const token = ++previewToken;
+    const [n, extra] = figma.currentPage.selection;
+    if (!n || extra || loadPluginData(n) || n.width < 1) return send({ type: "preview", id: "", png: null });
+    previewTimer = setTimeout(() => {
+      n.exportAsync({ format: "PNG", constraint: { type: "WIDTH", value: Math.min(640, Math.round(n.width)) } }).then((png) => {
+        if (token === previewToken) send({ type: "preview", id: n.id, png });
+      }).catch(() => {
+        if (token === previewToken) send({ type: "preview", id: n.id, png: null });
+      });
+    }, 250);
+  }
+  figma.on("selectionchange", () => {
+    send({ type: "selection", info: selectionInfo() });
+    schedulePreview();
+  });
 })();

@@ -4,7 +4,7 @@ Figma plugins for the AWS Student Builder Group. One monorepo, one shared core, 
 
 | Plugin | What it does |
 | --- | --- |
-| [Pixel Render](plugins/pixel-render) | Draw the AWS pixel-grid look on a grid and render it to Figma as vector shapes. Merged boxes you can carve into any shape, gradients, effects, light, dark and custom themes, overlay on a photo. |
+| [Pixel Render](plugins/pixel-render) | Draw the AWS pixel-grid look on a grid and render it to Figma as vector shapes. Merged boxes you can carve into any shape, gradients, effects, light, dark and custom themes, overlay on a photo, or cut the pixels out of the photo itself. |
 
 ## Set up
 
@@ -61,7 +61,16 @@ Undo and redo are `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z`.
 
 **Themes.** Light and Dark are built in, with colors sampled from the SBG posts. A Photo theme adds a yellow role. Drawings reference roles, not colors, so switching theme recolors everything. Make a custom copy to edit roles or add one, and export or import it as JSON to share with the team.
 
-**Canvas.** 1080 × 1080 and 1080 × 1350 presets, or any size, with a cell size you choose (54 px by default). Overlay mode sizes the grid to the layer you select in Figma, puts a transparent frame on top of it, and starts with grid lines off. Raise the grid line opacity if you want them over a photo.
+**Cut photo.** The third mode, next to Frame and Overlay. The cells and boxes you draw become holes in a photo.
+1. Choose **Cut photo** under Canvas and lines. The canvas starts empty, so you can draw the pattern first with any tool, effects included.
+2. Select the photo in Figma. It appears under the grid in the editor, the grid resizes to it, and your cells show as see-through holes.
+3. Press **Cut the photo**. A copy of the photo appears next to the original with a mask applied, so the holes show whatever is behind it. The original is not touched.
+4. Switch to **Keep only the pixels** to flip it: only the cells you drew stay, the rest of the photo is cut away.
+5. To change the cut later, select the `Pixel Cut` frame, press Edit frame, adjust, then press Update frame. The mask is replaced and the photo copy stays.
+
+Colors do not matter in this mode, since every drawn cell is a hole. Any layer works as the photo: an image fill, a frame or a group.
+
+**Canvas.** 1080 × 1080 and 1080 × 1350 presets, or any size, with a cell size you choose (54 px by default). Overlay and Cut photo modes size the grid to the layer you select in Figma, puts a transparent frame on top of it, and starts with grid lines off. Raise the grid line opacity if you want them over a photo.
 
 ## Rendering to Figma
 
@@ -94,6 +103,8 @@ Pixel Render (frame, clipped)
 | Text shows in the wrong font | The font name must match an installed Figma font exactly. Pick from the list in the Font field. |
 | A merge failed | Merge needs cells that touch each other. Select one connected area. |
 | Grid looks different after switching to Overlay | Overlay turns the grid lines off. Raise the slider under Canvas and lines. |
+| Cut the photo is grayed out | Select exactly one layer in Figma. The button needs a photo selected, and the drawing needs at least one cell. |
+| The photo does not show in the editor | The panel shows a preview of the selected layer a moment after you select it. Very large or hidden layers may not preview, but the cut still works. |
 
 ## Develop
 
