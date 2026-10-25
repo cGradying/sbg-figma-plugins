@@ -1,0 +1,169 @@
+<div class="app">
+  <header class="brand">
+    <canvas id="fade" aria-hidden="true"></canvas>
+    <h1>PIXEL RENDER</h1>
+    <p class="by">AWS SBG Figma plugins · <a href="https://github.com/cGradying" target="_blank" rel="noreferrer">cgradying</a></p>
+  </header>
+
+  <main class="scroll">
+    <section class="stage" aria-label="Pixel grid editor">
+      <div class="bar-row">
+        <div class="seg tools" id="tools" role="toolbar" aria-label="Tools">
+          <button data-tool="brush" class="on" title="Brush (B)">Brush</button>
+          <button data-tool="eraser" title="Eraser (E)">Erase</button>
+          <button data-tool="rect" title="Rectangle fill (R)">Rect</button>
+          <button data-tool="bucket" title="Bucket fill (G)">Bucket</button>
+          <button data-tool="select" title="Select and move (S)">Select</button>
+        </div>
+        <div class="row">
+          <button class="btn-sm" id="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">↶</button>
+          <button class="btn-sm" id="redo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo">↷</button>
+        </div>
+      </div>
+      <div class="cv-wrap"><canvas id="cv" aria-label="Pixel grid"></canvas></div>
+      <p class="readout num" id="readout"></p>
+      <div class="paintbar">
+        <div class="chips" id="chips" role="radiogroup" aria-label="Paint color"></div>
+        <div class="row">
+          <div class="seg" id="paint-kind">
+            <button data-kind="solid" class="on">Solid</button>
+            <button data-kind="outline">Outline</button>
+          </div>
+          <label class="op">Opacity <input type="range" id="opacity" min="10" max="100" value="100" aria-label="Opacity"><b class="num" id="opacity-v">100%</b></label>
+        </div>
+      </div>
+    </section>
+
+    <details name="sec" open id="sec-canvas">
+      <summary>Canvas <span class="tag" id="tag-canvas"></span></summary>
+      <div class="inner">
+        <div class="seg full" id="canvas-preset">
+          <button data-w="1080" data-h="1080">1080 × 1080</button>
+          <button data-w="1080" data-h="1350">1080 × 1350</button>
+        </div>
+        <div class="three f" style="margin-top:10px">
+          <div><label for="cw">Width</label><input type="number" id="cw" min="108" max="8000" step="1"></div>
+          <div><label for="ch">Height</label><input type="number" id="ch" min="108" max="8000" step="1"></div>
+          <div><label for="cell">Cell px</label><input type="number" id="cell" min="8" max="400" step="1"></div>
+        </div>
+        <div class="two f">
+          <div><label for="grid">Grid lines</label>
+            <select id="grid"><option value="faint">Faint</option><option value="visible">Visible</option><option value="off">Off</option></select></div>
+          <div><label>Mode</label>
+            <div class="seg full" id="mode"><button data-mode="standalone" class="on">Frame</button><button data-mode="overlay">Overlay</button></div></div>
+        </div>
+        <small class="note" id="mode-note">Frame makes its own frame. Overlay sizes the grid to the layer you select in Figma and lays it on top, with a transparent background.</small>
+      </div>
+    </details>
+
+    <details name="sec" id="sec-theme">
+      <summary>Theme <span class="tag" id="tag-theme"></span></summary>
+      <div class="inner">
+        <div class="f"><label for="theme">Theme</label><select id="theme"></select></div>
+        <div id="roles" class="roles"></div>
+        <div class="row wrap f">
+          <button class="btn-sm" id="theme-copy">Make custom copy</button>
+          <button class="btn-sm" id="theme-delete">Delete</button>
+        </div>
+        <div class="row f" id="role-add">
+          <input type="text" id="role-name" placeholder="New role, e.g. yellow" aria-label="New role name">
+          <input type="color" id="role-color" value="#f4e05c" aria-label="New role color" style="width:56px">
+          <button class="btn-sm" id="role-add-btn">Add</button>
+        </div>
+        <div class="f"><label for="theme-json">Share a theme (JSON)</label>
+          <textarea id="theme-json" rows="3" spellcheck="false"></textarea>
+          <div class="row" style="margin-top:6px"><button class="btn-sm" id="theme-export">Export</button><button class="btn-sm" id="theme-import">Import</button></div></div>
+      </div>
+    </details>
+
+    <details name="sec" id="sec-sel">
+      <summary>Selection <span class="tag num" id="tag-sel">none</span></summary>
+      <div class="inner">
+        <div class="row wrap f">
+          <button class="btn-sm" id="sel-paint">Apply paint</button>
+          <button class="btn-sm" id="sel-merge">Merge into box</button>
+          <button class="btn-sm" id="sel-split">Split box</button>
+          <button class="btn-sm" id="sel-clear">Clear cells</button>
+        </div>
+        <div class="grp">NUDGE</div>
+        <div class="nudge f">
+          <button class="btn-sm" data-n="0,-1" aria-label="Up">↑</button>
+          <button class="btn-sm" data-n="-1,0" aria-label="Left">←</button>
+          <button class="btn-sm" data-n="1,0" aria-label="Right">→</button>
+          <button class="btn-sm" data-n="0,1" aria-label="Down">↓</button>
+        </div>
+        <div class="grp">GRADIENT</div>
+        <div class="three f">
+          <div><label for="g-a">From</label><select id="g-a"></select></div>
+          <div><label for="g-b">To</label><select id="g-b"></select></div>
+          <div><label for="g-angle">Angle</label><input type="number" id="g-angle" value="90" min="0" max="360"></div>
+        </div>
+        <div class="row f">
+          <div class="seg" id="g-mode"><button data-gm="stepped" class="on">Stepped</button><button data-gm="smooth">Smooth</button></div>
+          <button class="btn-sm" id="g-apply">Apply gradient</button>
+        </div>
+        <div class="grp">BOX TEXT</div>
+        <div class="f"><label for="t-value">Text (select one box)</label><input type="text" id="t-value" placeholder="Co-Lead"></div>
+        <div class="three f">
+          <div><label for="t-font">Font</label><input type="text" id="t-font" list="fonts" value="Inter"></div>
+          <div><label for="t-style">Style</label><input type="text" id="t-style" value="Bold"></div>
+          <div><label for="t-size">Size</label><input type="number" id="t-size" value="48" min="6" max="400"></div>
+        </div>
+        <div class="two f">
+          <div><label for="t-role">Color</label><select id="t-role"></select></div>
+          <div><label>Align</label><div class="seg full" id="t-align"><button data-a="left">Left</button><button data-a="center" class="on">Center</button></div></div>
+        </div>
+        <button class="btn-sm" id="t-apply">Apply text</button>
+        <datalist id="fonts"></datalist>
+      </div>
+    </details>
+
+    <details name="sec" id="sec-fx">
+      <summary>Effects <span class="tag">on selection</span></summary>
+      <div class="inner">
+        <div class="grp">PIXEL FADE</div>
+        <div class="three f">
+          <div><label for="fx-fade-edge">Toward</label><select id="fx-fade-edge"><option>right</option><option>left</option><option>top</option><option>bottom</option></select></div>
+          <div><label for="fx-fade-d">Density</label><input type="number" id="fx-fade-d" value="80" min="0" max="100"></div>
+          <div><label for="fx-fade-s">Seed</label><input type="number" id="fx-fade-s" value="1"></div>
+        </div>
+        <button class="btn-sm f" data-fx="fade">Apply fade</button>
+        <div class="grp">STAIR STAGGER</div>
+        <div class="two f">
+          <div><label for="fx-stair-dir">Direction</label><select id="fx-stair-dir"><option value="1">Right</option><option value="-1">Left</option></select></div>
+          <div><label for="fx-stair-step">Rows per step</label><input type="number" id="fx-stair-step" value="1" min="1" max="20"></div>
+        </div>
+        <button class="btn-sm f" data-fx="stair">Apply stagger</button>
+        <div class="grp">HARD SHADOW</div>
+        <div class="three f">
+          <div><label for="fx-sh-x">Offset x</label><input type="number" id="fx-sh-x" value="1" min="-10" max="10"></div>
+          <div><label for="fx-sh-y">Offset y</label><input type="number" id="fx-sh-y" value="1" min="-10" max="10"></div>
+          <div><label for="fx-sh-role">Color</label><select id="fx-sh-role"></select></div>
+        </div>
+        <button class="btn-sm f" data-fx="shadow">Apply shadow</button>
+        <div class="grp">SEEDED SCATTER</div>
+        <div class="two f">
+          <div><label for="fx-sc-d">Density</label><input type="number" id="fx-sc-d" value="30" min="0" max="100"></div>
+          <div><label for="fx-sc-s">Seed</label><input type="number" id="fx-sc-s" value="1"></div>
+        </div>
+        <div class="chips f" id="fx-sc-roles" aria-label="Scatter colors"></div>
+        <div class="row f"><button class="btn-sm" data-fx="scatter">Apply scatter</button><button class="btn-sm" id="fx-sc-roll">New seed</button></div>
+        <div class="grp">OUTLINE</div>
+        <div class="row f"><select id="fx-ol-role" aria-label="Outline color"></select><button class="btn-sm" data-fx="outline">Outline selection</button></div>
+      </div>
+    </details>
+  </main>
+
+  <footer class="dock">
+    <div class="row wrap">
+      <button class="btn" id="render-new">Render to Figma</button>
+    </div>
+    <div class="row wrap">
+      <button class="btn alt" id="render-update" disabled>Update frame</button>
+      <button class="btn alt" id="render-load" disabled>Edit frame</button>
+      <button class="btn alt" id="render-flat" disabled>Flatten copy</button>
+    </div>
+    <p class="status" id="status" role="status"></p>
+    <p class="credit">Pixel Render <span id="version">v0.1</span> · made by cgradying</p>
+  </footer>
+</div>

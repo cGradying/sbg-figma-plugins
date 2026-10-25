@@ -1,0 +1,7 @@
+node_modules/
+dist/
+!plugins/*/dist/
+plugins/*/dist/preview.html
+.DS_Store
+.claude/
+*.log
