@@ -58,3 +58,6 @@ details[open]>.inner{animation:rise .28s var(--ease)}
 .empty p{margin:0;color:var(--txt);font-size:12.5px;padding:6px 10px;background:rgba(20,17,28,.88);border-radius:6px}
 .empty button{pointer-events:auto;background:var(--panel)}
 .note{color:var(--mut);font-size:11.5px;margin:0 0 8px}
+
+.hint-col{display:grid;gap:6px;justify-items:start}
+.chk{display:flex;align-items:center;gap:8px;font-size:12.5px;margin:8px 0 4px;color:var(--txt);cursor:pointer}

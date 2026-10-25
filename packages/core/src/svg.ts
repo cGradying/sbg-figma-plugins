@@ -19,7 +19,8 @@ export function sceneToSvg(scene: Scene): string {
   };
   const body: string[] = [];
   if (scene.background) body.push(`<rect width="${scene.canvas.w}" height="${scene.canvas.h}" fill="${scene.background}"/>`);
-  if (scene.grid) body.push(`<path d="${scene.grid.d}" stroke="${scene.grid.hex}" stroke-opacity="${scene.grid.opacity}" stroke-width="2" fill="none"/>`);
+  const grid = scene.grid ? `<path d="${scene.grid.d}" stroke="${scene.grid.hex}" stroke-opacity="${scene.grid.opacity}" stroke-width="2" fill="none"/>` : '';
+  if (!scene.gridTop) body.push(grid);
   for (const it of scene.items) {
     if (it.kind === 'path') body.push(`<path transform="translate(${it.at.x} ${it.at.y})" d="${it.d}" ${fillAttr(it.fill)}/>`);
     else if (it.kind === 'rect') {
@@ -41,6 +42,7 @@ export function sceneToSvg(scene: Scene): string {
       }
     }
   }
+  if (scene.gridTop) body.push(grid);
   const { w, h } = scene.canvas;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">${defs.length ? `<defs>${defs.join('')}</defs>` : ''}${body.join('')}</svg>`;
 }

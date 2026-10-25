@@ -42,7 +42,7 @@ To update, pull the repo and run the plugin again. Figma reads the files fresh e
 | Fill | `R` | Fills a dragged rectangle of cells with the color. |
 | Bucket | `G` | Flood-fills an empty or same-colored area. |
 | Erase | `E` | Erases cells. On a box it carves only the cells you touch. If that cuts the box in two, the pieces become separate boxes. |
-| Lines | `L` | Hides single grid line segments. Click or drag across a line. Hold Shift to bring a line back. Boxes and cells stay. |
+| Lines | `L` | Hides or shows single grid line segments. Click or drag across a line, and pick Hide lines or Show lines under the grid (Shift flips it for one drag). Boxes and cells stay. |
 | Select | `S` | Drag to select, click a box to select all of it, Shift adds, drag a selection to move it. Esc deselects. |
 
 Undo and redo are `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z`.
@@ -57,7 +57,7 @@ Undo and redo are `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z`.
 
 **Effects.** Pixel fade, stair stagger, hard shadow, seeded scatter and outline, all on the selection. The same seed gives the same scatter.
 
-**Grid lines.** Canvas and lines has a grid line opacity slider that goes all the way to 0. The Lines tool removes one segment at a time, and Restore hidden lines brings them all back.
+**Grid lines.** Canvas and lines has a grid line opacity slider that goes all the way to 0, and a switch to draw the lines on top of shapes, which puts the lines inside boxes and cells like the thin lines in the photo posts. The Lines tool hides or shows one segment at a time, and Restore hidden lines brings them all back.
 
 **Themes.** Light and Dark are built in, with colors sampled from the SBG posts. A Photo theme adds a yellow role. Drawings reference roles, not colors, so switching theme recolors everything. Make a custom copy to edit roles or add one, and export or import it as JSON to share with the team.
 
@@ -70,7 +70,7 @@ Undo and redo are `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z`.
 
 Colors do not matter in this mode, since every drawn cell is a hole. Any layer works as the photo: an image fill, a frame or a group.
 
-**Canvas.** 1080 × 1080 and 1080 × 1350 presets, or any size, with a cell size you choose (54 px by default). Overlay and Cut photo modes size the grid to the layer you select in Figma, puts a transparent frame on top of it, and starts with grid lines off. Raise the grid line opacity if you want them over a photo.
+**Canvas.** 1080 × 1080 and 1080 × 1350 presets, or any size, with a cell size you choose (54 px by default). Overlay and Cut photo modes size the grid to the layer you select in Figma, puts a transparent frame on top of it, and keeps the grid lines on top of your shapes. Lines can still be hidden or shown one segment at a time, or turned down to 0 with the opacity slider.
 
 ## Rendering to Figma
 
@@ -102,7 +102,7 @@ Pixel Render (frame, clipped)
 | Buttons grayed out | Update, Edit and Flatten need a `Pixel Render` frame selected in Figma. Render over selection needs a layer selected. |
 | Text shows in the wrong font | The font name must match an installed Figma font exactly. Pick from the list in the Font field. |
 | A merge failed | Merge needs cells that touch each other. Select one connected area. |
-| Grid looks different after switching to Overlay | Overlay turns the grid lines off. Raise the slider under Canvas and lines. |
+| Lines are not visible in Overlay | Raise the grid line opacity under Canvas and lines. If it is above 0, check that the lines were not hidden with the Lines tool, and use Restore hidden lines. |
 | Cut the photo is grayed out | Select exactly one layer in Figma. The button needs a photo selected, and the drawing needs at least one cell. |
 | The photo does not show in the editor | The panel shows a preview of the selected layer a moment after you select it. Very large or hidden layers may not preview, but the cut still works. |
 

@@ -294,6 +294,7 @@
       cell: doc.cell,
       canvas: doc.canvas,
       gridOpacity: doc.gridOpacity,
+      gridTop: doc.gridTop,
       gridCut: [...doc.gridCut].sort((a, b) => a - b),
       photoKeep: doc.photoKeep,
       theme: doc.theme,
@@ -327,6 +328,7 @@
       cell: w.cell,
       canvas: w.canvas,
       gridOpacity: isNum(w.gridOpacity) ? w.gridOpacity : 0.7,
+      gridTop: w.gridTop === true,
       gridCut: new Set(Array.isArray(w.gridCut) ? w.gridCut.filter(isNum) : []),
       photoKeep: w.photoKeep === true,
       theme: w.theme,
@@ -362,6 +364,7 @@
       cut: { keep: doc.photoKeep, visible: shape(doc.photoKeep ? [...holes] : rest), hidden: shape(doc.photoKeep ? rest : [...holes]) },
       background: null,
       grid: doc.gridOpacity > 0 && d ? { d, hex: resolve(theme, "gridLine"), opacity: doc.gridOpacity } : null,
+      gridTop: false,
       items: []
     };
   }
@@ -450,6 +453,7 @@
       cut: null,
       background: doc.mode === "overlay" ? null : resolve(theme, "bg"),
       grid: doc.gridOpacity > 0 && d ? { d, hex: resolve(theme, "gridLine"), opacity: doc.gridOpacity } : null,
+      gridTop: doc.gridTop,
       items
     };
   }
@@ -610,16 +614,19 @@
     frame.clipsContent = true;
     frame.exportSettings = [{ format: "PNG", suffix: "@2x", constraint: { type: "SCALE", value: 2 }, contentsOnly: true }, { format: "SVG", suffix: "", contentsOnly: true }];
     frame.fills = scene.background ? [{ type: "SOLID", color: rgb(scene.background) }] : [];
-    if (scene.grid) {
+    const addGrid = () => {
+      if (!scene.grid) return;
       const g = vector("Grid", scene.grid.d, { x: 0, y: 0 });
       g.fills = [];
       g.strokes = [{ type: "SOLID", color: rgb(scene.grid.hex), opacity: scene.grid.opacity }];
       g.strokeWeight = 2;
       group(frame, "Grid", [g]);
-    }
+    };
+    if (!scene.gridTop) addGrid();
     const shapes = scene.items.filter((i) => i.kind !== "box");
     group(frame, "Cells", shapes.map((i) => makeItem(i, fonts)));
     group(frame, "Boxes", scene.items.filter((i) => i.kind === "box").map((i) => makeItem(i, fonts)));
+    if (scene.gridTop) addGrid();
     if (save) savePluginData(frame, doc);
   }
   async function nodeById(id) {

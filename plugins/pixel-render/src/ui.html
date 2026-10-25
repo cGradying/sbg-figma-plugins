@@ -26,7 +26,10 @@
       </div>
 
       <div class="hint-row">
-        <p class="hint" id="hint"></p>
+        <div class="hint-col">
+          <p class="hint" id="hint"></p>
+          <div class="seg" id="lines-mode" hidden><button data-lm="hide" class="on" title="Click or drag over a line to hide it">Hide lines</button><button data-lm="show" title="Click or drag over a line to bring it back">Show lines</button></div>
+        </div>
         <div class="row">
           <button class="btn-sm icon" id="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo"><i data-icon="undo"></i></button>
           <button class="btn-sm icon" id="redo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo"><i data-icon="redo"></i></button>
@@ -166,7 +169,8 @@
         <div class="f"><label for="grid-op">Grid line opacity <b class="num" id="grid-op-v"></b></label>
           <input type="range" id="grid-op" min="0" max="100" value="70" aria-label="Grid line opacity">
           <div class="row" style="margin-top:6px"><button class="btn-sm" id="lines-restore">Restore hidden lines</button><span class="note" id="lines-count"></span></div>
-          <small class="note">Use the Lines tool to hide one segment at a time. Boxes stay.</small></div>
+          <label class="chk"><input type="checkbox" id="grid-top"> Draw grid lines on top of shapes</label>
+          <small class="note">Use the Lines tool to hide or show one segment at a time. Boxes stay.</small></div>
       </div>
     </details>
   </main>

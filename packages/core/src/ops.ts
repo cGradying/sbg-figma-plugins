@@ -167,6 +167,7 @@ export function resize(doc: Doc, o: { canvas: { w: number; h: number }; cell: nu
   return {
     ...next,
     gridOpacity: doc.gridOpacity,
+    gridTop: doc.gridTop,
     photoKeep: doc.photoKeep,
     gridCut: cut,
     cells,

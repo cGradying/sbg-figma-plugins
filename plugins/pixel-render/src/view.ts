@@ -69,13 +69,15 @@ export function draw(canvas: HTMLCanvasElement, scene: Scene, doc: Doc, ov: Over
     ctx.stroke(p);
     ctx.setLineDash([]);
   }
-  if (scene.grid) {
+  const drawGrid = () => {
+    if (!scene.grid) return;
     ctx.globalAlpha = scene.grid.opacity;
     ctx.strokeStyle = scene.grid.hex;
     ctx.lineWidth = 2;
     ctx.stroke(new Path2D(scene.grid.d));
     ctx.globalAlpha = 1;
-  }
+  };
+  if (!scene.gridTop) drawGrid();
   if (!scene.grid) {
     ctx.strokeStyle = 'rgba(255,255,255,.07)';
     ctx.lineWidth = 1 / scale;
@@ -130,6 +132,7 @@ export function draw(canvas: HTMLCanvasElement, scene: Scene, doc: Doc, ov: Over
       }
     }
   }
+  if (scene.gridTop) drawGrid();
   // Fully transparent shapes still exist, so the editor draws a dashed marker where they are.
   ctx.strokeStyle = 'rgba(255,255,255,.35)';
   ctx.lineWidth = 1.5 / scale;

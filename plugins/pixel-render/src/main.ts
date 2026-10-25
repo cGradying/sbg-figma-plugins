@@ -145,16 +145,19 @@ async function draw(frame: FrameNode, doc: Doc, scene: Scene, save = true) {
   frame.clipsContent = true;
   frame.exportSettings = [{ format: 'PNG', suffix: '@2x', constraint: { type: 'SCALE', value: 2 }, contentsOnly: true }, { format: 'SVG', suffix: '', contentsOnly: true }];
   frame.fills = scene.background ? [{ type: 'SOLID', color: rgb(scene.background) }] : [];
-  if (scene.grid) {
+  const addGrid = () => {
+    if (!scene.grid) return;
     const g = vector('Grid', scene.grid.d, { x: 0, y: 0 });
     g.fills = [];
     g.strokes = [{ type: 'SOLID', color: rgb(scene.grid.hex), opacity: scene.grid.opacity }];
     g.strokeWeight = 2;
     group(frame, 'Grid', [g]);
-  }
+  };
+  if (!scene.gridTop) addGrid();
   const shapes = scene.items.filter((i) => i.kind !== 'box');
   group(frame, 'Cells', shapes.map((i) => makeItem(i, fonts)));
   group(frame, 'Boxes', scene.items.filter((i) => i.kind === 'box').map((i) => makeItem(i, fonts)));
+  if (scene.gridTop) addGrid();
   if (save) savePluginData(frame, doc);
 }
 

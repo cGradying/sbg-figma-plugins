@@ -32,6 +32,8 @@ export type Doc = {
   cell: number;
   canvas: { w: number; h: number };
   gridOpacity: number;
+  // grid lines drawn above cells and boxes instead of under them
+  gridTop: boolean;
   gridCut: ReadonlySet<number>;
   cells: ReadonlyMap<number, Paint>;
   boxes: readonly Box[];
@@ -64,6 +66,7 @@ export function newDoc(o: {
     cell,
     canvas: o.canvas,
     gridOpacity: DEFAULT_GRID_OPACITY,
+    gridTop: false,
     gridCut: new Set(),
     cells: new Map(),
     boxes: [],

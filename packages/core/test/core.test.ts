@@ -329,3 +329,15 @@ test('boxes count as holes in photo mode and photoKeep survives serialize and re
   assert.equal(parse(serialize(d)).mode, 'photo');
   assert.equal(resize(d, { canvas: { w: 540, h: 540 }, cell: 54 }).photoKeep, true);
 });
+
+test('grid on top is carried by the scene, the svg order and serialize', () => {
+  const d = { ...fillRect(doc0(), { x: 0, y: 0 }, { x: 1, y: 1 }, purple), gridTop: true };
+  const s = buildScene(d, LIGHT);
+  assert.equal(s.gridTop, true);
+  const svg = sceneToSvg(s);
+  assert.ok(svg.lastIndexOf('stroke-width="2"') > svg.lastIndexOf('<rect'));
+  const under = sceneToSvg(buildScene({ ...d, gridTop: false }, LIGHT));
+  assert.ok(under.indexOf('stroke-width="2"') < under.indexOf('fill="#ac5bfe"'));
+  assert.equal(parse(serialize(d)).gridTop, true);
+  assert.equal(resize(d, { canvas: { w: 540, h: 540 }, cell: 54 }).gridTop, true);
+});

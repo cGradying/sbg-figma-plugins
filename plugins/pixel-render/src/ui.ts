@@ -32,6 +32,7 @@ const st = {
   photo: undefined as { id: string; img: HTMLImageElement } | undefined,
   hover: undefined as number | undefined,
   edge: undefined as number | undefined,
+  lineShow: false,
   working: undefined as Doc | undefined,
   preview: undefined as ReadonlySet<number> | undefined,
   shift: undefined as { dx: number; dy: number } | undefined,
@@ -50,7 +51,7 @@ function status(msg: string, kind: '' | 'ok' | 'err' = '') {
 
 const MODE_NOTES: Record<Doc['mode'], string> = {
   standalone: 'Draw on a blank canvas and render it as its own frame.',
-  overlay: 'Sizes the grid to the layer you select in Figma and lays a transparent frame on top of it. Grid lines start off.',
+  overlay: 'Sizes the grid to the layer you select in Figma and lays a transparent frame on top of it. Grid lines stay on top of your shapes, so you can still hide or show them.',
   photo: 'Select a photo in Figma, or draw first on the empty canvas. The cells you draw are cut out of a copy of the photo.',
 };
 
@@ -60,7 +61,7 @@ const HINTS: Record<Tool, string> = {
   rect: '<b>Fill.</b> Drag a rectangle to fill it with the color.',
   bucket: '<b>Bucket.</b> Click to flood an empty or same-colored area.',
   eraser: '<b>Erase.</b> Drag over cells. On a box it carves out only those cells.',
-  lines: '<b>Lines.</b> Click or drag across a grid line to hide it. Shift restores.',
+  lines: '<b>Lines.</b> Click or drag across a grid line. Hide or show it with the switch below. Shift flips it.',
   select: '<b>Select.</b> Drag to select, click a box to pick it, Shift adds, drag a selection to move it.',
 };
 
@@ -89,6 +90,9 @@ function redraw() {
   $('photo-opts').hidden = !photoMode;
   for (const b of $('photo-opts').children) b.classList.toggle('on', ((b as HTMLElement).dataset.keep === 'true') === d.photoKeep);
   $('mode-note').textContent = MODE_NOTES[d.mode];
+  $<HTMLInputElement>('grid-top').checked = d.gridTop;
+  $('lines-mode').hidden = st.tool !== 'lines';
+  for (const b of $('lines-mode').children) b.classList.toggle('on', ((b as HTMLElement).dataset.lm === 'show') === st.lineShow);
   const whole = boxesInside(st.hist.present, st.sel);
   $('selbar').hidden = st.sel.size === 0;
   $('sel-count').textContent = `${st.sel.size} cell${st.sel.size === 1 ? '' : 's'}`;
@@ -260,11 +264,13 @@ for (const id of ['cw', 'ch', 'cell']) $(id).onchange = () => setCanvas(Number($
 $('grid-op').oninput = (e) => { st.working = { ...st.hist.present, gridOpacity: Number((e.target as HTMLInputElement).value) / 100 }; redraw(); };
 $('grid-op').onchange = () => { if (st.working) apply(st.working); };
 for (const b of $('photo-opts').children) (b as HTMLElement).onclick = () => apply({ ...st.hist.present, photoKeep: (b as HTMLElement).dataset.keep === 'true' });
+$('grid-top').onchange = (e) => apply({ ...st.hist.present, gridTop: (e.target as HTMLInputElement).checked });
+for (const b of $('lines-mode').children) (b as HTMLElement).onclick = () => { st.lineShow = (b as HTMLElement).dataset.lm === 'show'; redraw(); };
 $('lines-restore').onclick = () => apply({ ...st.hist.present, gridCut: new Set() });
 for (const b of $('mode').children) (b as HTMLElement).onclick = () => {
   const mode = (b as HTMLElement).dataset.mode as Doc['mode'];
   const d = st.hist.present;
-  apply({ ...d, mode, gridOpacity: mode === 'overlay' ? 0 : d.gridOpacity || (mode === 'photo' ? 0.4 : 0.7) });
+  apply({ ...d, mode, gridTop: mode === 'overlay' ? true : d.gridTop, gridOpacity: d.gridOpacity || (mode === 'photo' ? 0.4 : 0.6) });
   syncCanvasInputs();
   matchTarget();
 };
@@ -323,7 +329,7 @@ cv.onpointerdown = (e) => {
   cv.setPointerCapture(e.pointerId);
   const c = cellAt(e);
   const d = st.hist.present;
-  drag = { start: c, last: c, moving: false, restore: e.shiftKey };
+  drag = { start: c, last: c, moving: false, restore: e.shiftKey !== st.lineShow };
   const k = cellKey(d, c.x, c.y);
   if (st.tool === 'brush') st.working = paintCells(d, [k], currentPaint());
   else if (st.tool === 'eraser') st.working = eraseCells(d, [k]);

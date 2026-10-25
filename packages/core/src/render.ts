@@ -33,6 +33,8 @@ export type Scene = {
   cut: { keep: boolean; visible: CutShape | null; hidden: CutShape | null } | null;
   background: string | null;
   grid: { d: string; hex: string; opacity: number } | null;
+  // draw the grid above the items instead of under them
+  gridTop: boolean;
   items: Item[];
 };
 
@@ -60,6 +62,7 @@ function photoScene(doc: Doc, theme: Theme): Scene {
     cut: { keep: doc.photoKeep, visible: shape(doc.photoKeep ? [...holes] : rest), hidden: shape(doc.photoKeep ? rest : [...holes]) },
     background: null,
     grid: doc.gridOpacity > 0 && d ? { d, hex: resolve(theme, 'gridLine'), opacity: doc.gridOpacity } : null,
+    gridTop: false,
     items: [],
   };
 }
@@ -151,6 +154,7 @@ export function buildScene(doc: Doc, theme: Theme, o: { flatten?: boolean } = {}
     cut: null,
     background: doc.mode === 'overlay' ? null : resolve(theme, 'bg'),
     grid: doc.gridOpacity > 0 && d ? { d, hex: resolve(theme, 'gridLine'), opacity: doc.gridOpacity } : null,
+    gridTop: doc.gridTop,
     items,
   };
 }
